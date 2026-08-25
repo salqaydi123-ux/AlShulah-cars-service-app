@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { getCustomerExportRows, type CustomerExportRow } from '@/lib/actions/customers';
 import {
   addEmployee,
   renameEmployee,
@@ -11,6 +12,59 @@ import {
   upsertWashOption,
   type AdminConfigSnapshot,
 } from '@/lib/actions/settings';
+
+function downloadCustomersCsv(rows: CustomerExportRow[]) {
+  const header = ['الاسم', 'رقم الجوال', 'عدد الزيارات', 'آخر زيارة'];
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const lines = [header.map(escape).join(',')];
+  for (const r of rows) {
+    lines.push([r.name || '', r.phone, String(r.visits), r.lastVisitDate || ''].map(escape).join(','));
+  }
+  const csv = '﻿' + lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `alshulah-customers-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function CustomerExportCard() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastCount, setLastCount] = useState<number | null>(null);
+
+  async function handleExport() {
+    setLoading(true);
+    setError(null);
+    try {
+      const rows = await getCustomerExportRows();
+      downloadCustomersCsv(rows);
+      setLastCount(rows.length);
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر تجهيز الملف');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2><span className="dot" /> تصدير أرقام العملاء</h2>
+      <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 0, lineHeight: 1.7 }}>
+        يحمّل ملف Excel (CSV) فيه رقم جوال واسم كل عميل، مع عدد زياراته وتاريخ آخر زيارة — يفيدك بإرسال عروض أو تهنئات بمناسبات عبر واتساب.
+      </p>
+      <button className="btn-lookup" disabled={loading} onClick={handleExport}>
+        {loading ? 'جاري التجهيز...' : '⬇️ تحميل CSV'}
+      </button>
+      {lastCount !== null && <div className="save-msg" style={{ display: 'block', marginTop: 8 }}>✓ تم تحميل {lastCount} عميل</div>}
+      {error && <div className="lookup-msg show error" style={{ marginTop: 8 }}>{error}</div>}
+    </div>
+  );
+}
 
 function SavedTick({ show }: { show: boolean }) {
   if (!show) return null;
@@ -313,6 +367,8 @@ export default function AdminSettings({ config }: { config: AdminConfigSnapshot 
             <button className="btn-lookup" disabled={addingEmployee} onClick={handleAddEmployee}>إضافة</button>
           </div>
         </div>
+
+        <CustomerExportCard />
       </main>
     </>
   );
