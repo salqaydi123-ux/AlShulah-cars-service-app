@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { logoutAction } from '@/lib/actions/auth';
 import { searchByPhone, searchByPlate } from '@/lib/actions/lookup';
 import {
@@ -12,7 +12,15 @@ import {
   submitTransaction,
   updateTransaction,
 } from '@/lib/actions/transactions';
-import { BODY_LABEL, CARD_LABEL, EMIRATES, PAY_STATUS_LABEL } from '@/lib/constants';
+import { EMIRATES } from '@/lib/constants';
+import {
+  BODY_LABEL_BY_LANG,
+  PAY_METHOD_LABEL_BY_LANG,
+  PAY_STATUS_LABEL_BY_LANG,
+  emirateLabel,
+  t,
+  type Lang,
+} from '@/lib/i18n';
 import type {
   BankReconciliationResult,
   BodyType,
@@ -25,8 +33,10 @@ import type {
   VehicleRecord,
 } from '@/lib/types';
 
-function fmtDateAr(): string {
-  return new Date().toLocaleDateString('ar-AE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+const LANG_STORAGE_KEY = 'alshulah_lang';
+
+function fmtDate(lang: Lang): string {
+  return new Date().toLocaleDateString(lang === 'ar' ? 'ar-AE' : 'en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
 
 function buildSummary(entries: TransactionEntry[]): TodaySummary {
@@ -42,6 +52,14 @@ function buildSummary(entries: TransactionEntry[]): TodaySummary {
   return { cash, cardGross, cardNet, cardCommission, collectedLater, collected, pending, grand };
 }
 
+function catalogLabel(s: { name: string; name_en: string | null }, lang: Lang): string {
+  return lang === 'en' && s.name_en ? s.name_en : s.name;
+}
+
+function joinServices(services: { name: string; nameEn: string | null }[], lang: Lang): string {
+  return services.map((s) => (lang === 'en' && s.nameEn ? s.nameEn : s.name)).join(lang === 'en' ? ', ' : '، ');
+}
+
 const emptyManualPrices: Record<string, number> = {};
 
 export default function DailyEntryApp({
@@ -55,6 +73,20 @@ export default function DailyEntryApp({
   initialSummary: TodaySummary;
   initialReconciliation: BankReconciliationResult | null;
 }) {
+  const [lang, setLang] = useState<Lang>('ar');
+  const tr = (s: string) => t(s, lang);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(LANG_STORAGE_KEY);
+    if (saved === 'en' || saved === 'ar') setLang(saved);
+  }, []);
+
+  function toggleLang() {
+    const next: Lang = lang === 'ar' ? 'en' : 'ar';
+    setLang(next);
+    window.localStorage.setItem(LANG_STORAGE_KEY, next);
+  }
+
   const [entries, setEntries] = useState<TransactionEntry[]>(initialEntries);
   const [, startTransition] = useTransition();
   const [submitting, setSubmitting] = useState(false);
@@ -113,15 +145,15 @@ export default function DailyEntryApp({
   const washPrice = selectedWash ? (bodyType === 'sedan' ? selectedWash.sedan_price : selectedWash.fourwd_price) : 0;
 
   const total = useMemo(() => {
-    let t = washPrice;
+    let sum = washPrice;
     for (const code of addonChecked) {
       const a = config.addonServices.find((x) => x.code === code);
-      if (a) t += a.price;
+      if (a) sum += a.price;
     }
     for (const code of manualChecked) {
-      t += manualPrices[code] || 0;
+      sum += manualPrices[code] || 0;
     }
-    return t;
+    return sum;
   }, [washPrice, addonChecked, manualChecked, manualPrices, config]);
 
   const cardRate = config.cardRates.find((r) => r.card_type === cardType);
@@ -154,8 +186,8 @@ export default function DailyEntryApp({
   }
 
   function plateDisplay(v: VehicleRecord): string {
-    if (v.plate_emirate === 'other') return `${v.plate_country || '—'} ${v.plate_code || ''} ${v.plate_number || ''}`.trim();
-    return `${v.plate_emirate} ${v.plate_code || ''} ${v.plate_number || ''}`.trim();
+    const emirate = v.plate_emirate === 'other' ? (v.plate_country || '—') : emirateLabel(v.plate_emirate, lang);
+    return `${emirate} ${v.plate_code || ''} ${v.plate_number || ''}`.trim();
   }
 
   async function handleQuickSearch() {
@@ -170,18 +202,24 @@ export default function DailyEntryApp({
       if (result.vehicles.length === 0) {
         setLookupMsg({
           text: result.customer
-            ? '✓ عميل مسجل مسبقاً — تم تعبئة الاسم. لا توجد سيارة سابقة مرتبطة، أدخل بيانات اللوحة يدوياً.'
-            : 'عميل جديد — تم نقل الرقم لخانة الجوال. أكمل باقي البيانات يدوياً.',
+            ? tr('✓ عميل مسجل مسبقاً — تم تعبئة الاسم. لا توجد سيارة سابقة مرتبطة، أدخل بيانات اللوحة يدوياً.')
+            : tr('عميل جديد — تم نقل الرقم لخانة الجوال. أكمل باقي البيانات يدوياً.'),
         });
       } else if (result.vehicles.length === 1) {
         fillVehicleFields(result.vehicles[0]);
-        setLookupMsg({
-          text: `✓ عميل مسجّل — تم تعبئة كل البيانات تلقائياً: 📍 السيارة: ${plateDisplay(result.vehicles[0])}${
-            result.vehicles[0].model ? ' — 🚗 ' + result.vehicles[0].model : ''
-          }. باقي فقط اختيار الخدمة المطلوبة تحت.`,
-        });
+        const v = result.vehicles[0];
+        const detailLine =
+          lang === 'en'
+            ? `✓ Registered customer — all details filled in automatically: 📍 Vehicle: ${plateDisplay(v)}${v.model ? ' — 🚗 ' + v.model : ''}. Just pick the service below.`
+            : `✓ عميل مسجّل — تم تعبئة كل البيانات تلقائياً: 📍 السيارة: ${plateDisplay(v)}${v.model ? ' — 🚗 ' + v.model : ''}. باقي فقط اختيار الخدمة المطلوبة تحت.`;
+        setLookupMsg({ text: detailLine });
       } else {
-        setLookupMsg({ text: `✓ عميل مسجّل — لديه ${result.vehicles.length} سيارات مسجّلة. اختر السيارة المطلوبة:` });
+        setLookupMsg({
+          text:
+            lang === 'en'
+              ? `✓ Registered customer — has ${result.vehicles.length} registered vehicles. Choose the one:`
+              : `✓ عميل مسجّل — لديه ${result.vehicles.length} سيارات مسجّلة. اختر السيارة المطلوبة:`,
+        });
         setVehicleChoices(result.vehicles);
       }
       return;
@@ -196,22 +234,29 @@ export default function DailyEntryApp({
         if (result.customer.name) setCustName(result.customer.name);
       }
       fillVehicleFields(result.vehicle);
-      setLookupMsg({
-        text: `✓ سيارة مسجّلة مسبقاً: 📍 الإمارة: ${result.vehicle.plate_emirate === 'other' ? result.vehicle.plate_country || '—' : result.vehicle.plate_emirate} — الرمز: ${
-          result.vehicle.plate_code || '—'
-        } — الرقم: ${result.vehicle.plate_number || '—'}. 📱 الجوال: ${result.customer?.phone || '—'}${
-          result.vehicle.model ? ' — 🚗 ' + result.vehicle.model : ''
-        }. راجع البيانات المعبّأة تحت قبل الحفظ.`,
-      });
+      const emirateText = result.vehicle.plate_emirate === 'other' ? result.vehicle.plate_country || '—' : emirateLabel(result.vehicle.plate_emirate, lang);
+      const text =
+        lang === 'en'
+          ? `✓ Vehicle already registered: 📍 Emirate: ${emirateText} — Code: ${result.vehicle.plate_code || '—'} — Number: ${
+              result.vehicle.plate_number || '—'
+            }. 📱 Phone: ${result.customer?.phone || '—'}${result.vehicle.model ? ' — 🚗 ' + result.vehicle.model : ''}. Review the filled data before saving.`
+          : `✓ سيارة مسجّلة مسبقاً: 📍 الإمارة: ${emirateText} — الرمز: ${result.vehicle.plate_code || '—'} — الرقم: ${
+              result.vehicle.plate_number || '—'
+            }. 📱 الجوال: ${result.customer?.phone || '—'}${result.vehicle.model ? ' — 🚗 ' + result.vehicle.model : ''}. راجع البيانات المعبّأة تحت قبل الحفظ.`;
+      setLookupMsg({ text });
     } else {
-      setLookupMsg({ text: 'سيارة جديدة — لا يوجد تطابق دقيق. أدخل بيانات اللوحة والعميل يدوياً تحت (أول زيارة فقط).' });
+      setLookupMsg({ text: tr('سيارة جديدة — لا يوجد تطابق دقيق. أدخل بيانات اللوحة والعميل يدوياً تحت (أول زيارة فقط).') });
     }
   }
 
   function selectVehicleChoice(v: VehicleRecord) {
     fillVehicleFields(v);
     setVehicleChoices([]);
-    setLookupMsg({ text: `✓ تم اختيار السيارة: ${plateDisplay(v)}${v.model ? ' — 🚗 ' + v.model : ''}. باقي فقط اختيار الخدمة المطلوبة تحت.` });
+    const text =
+      lang === 'en'
+        ? `✓ Vehicle selected: ${plateDisplay(v)}${v.model ? ' — 🚗 ' + v.model : ''}. Just pick the service below.`
+        : `✓ تم اختيار السيارة: ${plateDisplay(v)}${v.model ? ' — 🚗 ' + v.model : ''}. باقي فقط اختيار الخدمة المطلوبة تحت.`;
+    setLookupMsg({ text });
   }
 
   async function handlePlateBlur() {
@@ -226,9 +271,9 @@ export default function DailyEntryApp({
       }
       setModel(result.vehicle.model || '');
       setBodyType(result.vehicle.body_type || 'sedan');
-      setScanMsg({ text: '✓ سيارة مسجّلة مسبقاً — تم تعبئة الجوال والموديل ونوع الهيكل تلقائياً. تأكد منها قبل الحفظ.' });
+      setScanMsg({ text: tr('✓ سيارة مسجّلة مسبقاً — تم تعبئة الجوال والموديل ونوع الهيكل تلقائياً. تأكد منها قبل الحفظ.') });
     } else {
-      setScanMsg({ text: 'سيارة جديدة — الرجاء تعبئة باقي البيانات يدوياً (أول زيارة فقط).' });
+      setScanMsg({ text: tr('سيارة جديدة — الرجاء تعبئة باقي البيانات يدوياً (أول زيارة فقط).') });
     }
   }
 
@@ -305,7 +350,7 @@ export default function DailyEntryApp({
       setEditingId(id);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
-      setFormError(err?.message || 'تعذّر تحميل بيانات العملية للتعديل.');
+      setFormError(err?.message || tr('تعذّر تحميل بيانات العملية للتعديل.'));
     } finally {
       setLoadingEditId(null);
     }
@@ -316,21 +361,21 @@ export default function DailyEntryApp({
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm('متأكد تبغى تحذف هذي العملية؟ لا يمكن التراجع بعد الحذف.')) return;
+    if (!window.confirm(tr('متأكد تبغى تحذف هذي العملية؟ لا يمكن التراجع بعد الحذف.'))) return;
     setEntries((prev) => prev.filter((e) => e.id !== id));
     setPendingList((prev) => prev.filter((e) => e.id !== id));
     if (editingId === id) resetForm();
     try {
       await deleteTransaction(id);
     } catch (err: any) {
-      setFormError(err?.message || 'تعذّر حذف العملية — حدّث الصفحة وحاول مرة أخرى.');
+      setFormError(err?.message || tr('تعذّر حذف العملية — حدّث الصفحة وحاول مرة أخرى.'));
     }
   }
 
   async function handleSubmit() {
     setFormError(null);
     if (!phone.trim() || (!noPlate && !plateNumber.trim()) || (!washCode || washCode === 'none') && addonChecked.size === 0 && manualChecked.size === 0 || !employeeId) {
-      setFormError('الرجاء تعبئة: رقم الجوال، رقم اللوحة، خدمة واحدة على الأقل (غسيل أساسي أو إضافة)، والموظف المنفّذ.');
+      setFormError(tr('الرجاء تعبئة: رقم الجوال، رقم اللوحة، خدمة واحدة على الأقل (غسيل أساسي أو إضافة)، والموظف المنفّذ.'));
       return;
     }
 
@@ -366,7 +411,7 @@ export default function DailyEntryApp({
       }
       resetForm();
     } catch (err: any) {
-      setFormError(err?.message || 'حدث خطأ أثناء الحفظ، حاول مرة أخرى.');
+      setFormError(err?.message || tr('حدث خطأ أثناء الحفظ، حاول مرة أخرى.'));
     } finally {
       setSubmitting(false);
     }
@@ -380,7 +425,7 @@ export default function DailyEntryApp({
       const result = await reconcileBank(amount);
       setReconcileResult(result);
     } catch (err: any) {
-      setReconcileError(err?.message || 'تعذّر حساب التسوية');
+      setReconcileError(err?.message || tr('تعذّر حساب التسوية'));
       setReconcileResult(null);
     }
   }
@@ -406,6 +451,7 @@ export default function DailyEntryApp({
   }
 
   function shareStatement() {
+    // نص المشاركة يبقى دائماً بالعربي لأنه موجّه للعميل (السوق محلي)، بغض النظر عن لغة واجهة الموظف الحالية.
     const list = pendingLoaded ? pendingList : entries.filter((e) => e.payStatus !== 'paid');
     if (list.length === 0) return;
     const grandTotal = list.reduce((s, e) => s + e.total, 0);
@@ -413,7 +459,7 @@ export default function DailyEntryApp({
 
     let msg = `*الشعلة لخدمة السيارات*\nكشف حساب — ${new Date().toLocaleDateString('ar-AE')}\n\n`;
     list.forEach((e) => {
-      msg += `🚗 ${e.plate}\n📅 ${e.date} ⏰ ${e.time}\n🔧 ${e.services.join('، ')}\n💰 ${e.total} AED — ${PAY_STATUS_LABEL[e.payStatus]}\n\n`;
+      msg += `🚗 ${e.plate}\n📅 ${e.date} ⏰ ${e.time}\n🔧 ${joinServices(e.services, 'ar')}\n💰 ${e.total} AED — ${PAY_STATUS_LABEL_BY_LANG.ar[e.payStatus]}\n\n`;
     });
     msg += `——————————\n`;
     msg += `الإجمالي الكلي: ${grandTotal} AED\n`;
@@ -430,26 +476,30 @@ export default function DailyEntryApp({
   }
 
   const showList = pendingLoaded ? pendingList : entries.filter((e) => e.payStatus !== 'paid');
+  const dir = lang === 'ar' ? 'rtl' : 'ltr';
 
   return (
-    <>
+    <div dir={dir}>
       <header>
         <div className="brand">
           <div>
-            <h1>الشعلة لخدمة السيارات</h1>
-            <div className="en">AL SHULAH CARS SERVICE — كلباء</div>
+            <h1>{lang === 'ar' ? 'الشعلة لخدمة السيارات' : 'AL SHULAH CARS SERVICE'}</h1>
+            <div className="en">{lang === 'ar' ? 'AL SHULAH CARS SERVICE — كلباء' : 'الشعلة لخدمة السيارات — Kalba'}</div>
           </div>
           <div className="today-count">
             <div className="n">{entries.length}</div>
-            <div className="l">سيارات اليوم</div>
+            <div className="l">{tr('سيارات اليوم')}</div>
           </div>
         </div>
         <div className="date-line">
-          <span>{fmtDateAr()}</span>
-          <span style={{ display: 'flex', gap: 10 }}>
-            <a href="/admin">الإعدادات</a>
+          <span>{fmtDate(lang)}</span>
+          <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button type="button" onClick={toggleLang} className="logout-link" style={{ fontWeight: 700 }}>
+              {lang === 'ar' ? 'English' : 'العربية'}
+            </button>
+            <a href="/admin">{tr('الإعدادات')}</a>
             <form action={logoutAction}>
-              <button type="submit" className="logout-link">خروج</button>
+              <button type="submit" className="logout-link">{tr('خروج')}</button>
             </form>
           </span>
         </div>
@@ -457,31 +507,31 @@ export default function DailyEntryApp({
 
       <main>
         <div className="card">
-          <h2><span className="dot" /> بحث سريع</h2>
+          <h2><span className="dot" /> {tr('بحث سريع')}</h2>
           <div className="pay-toggle" style={{ marginBottom: 10 }}>
-            <button className={searchMode === 'phone' ? 'sel' : ''} onClick={() => { setSearchMode('phone'); resetSearchFields(); }}>برقم الجوال</button>
-            <button className={searchMode === 'plate' ? 'sel' : ''} onClick={() => { setSearchMode('plate'); resetSearchFields(); }}>برقم اللوحة</button>
+            <button className={searchMode === 'phone' ? 'sel' : ''} onClick={() => { setSearchMode('phone'); resetSearchFields(); }}>{tr('برقم الجوال')}</button>
+            <button className={searchMode === 'plate' ? 'sel' : ''} onClick={() => { setSearchMode('plate'); resetSearchFields(); }}>{tr('برقم اللوحة')}</button>
           </div>
 
           {searchMode === 'phone' ? (
             <div className="phone-row">
               <input type="text" placeholder="05XXXXXXXX" value={quickSearchInput} onChange={(e) => setQuickSearchInput(e.target.value)} />
-              <button className="btn-lookup" onClick={handleQuickSearch}>بحث</button>
+              <button className="btn-lookup" onClick={handleQuickSearch}>{tr('بحث')}</button>
             </div>
           ) : (
             <div>
               <div className="plate-wrap">
                 <select className="plate-emirate-select" value={qsEmirate} onChange={(e) => setQsEmirate(e.target.value)}>
-                  {EMIRATES.map((em) => <option key={em} value={em}>{em}</option>)}
-                  <option value="other">دولة أخرى</option>
+                  {EMIRATES.map((em) => <option key={em} value={em}>{emirateLabel(em, lang)}</option>)}
+                  <option value="other">{tr('دولة أخرى')}</option>
                 </select>
-                <input className="plate-code" type="text" placeholder="الرمز" value={qsCode} onChange={(e) => setQsCode(e.target.value)} />
-                <input className="plate-number" type="text" placeholder="الرقم" value={qsNumber} onChange={(e) => setQsNumber(e.target.value)} />
+                <input className="plate-code" type="text" placeholder={tr('الرمز')} value={qsCode} onChange={(e) => setQsCode(e.target.value)} />
+                <input className="plate-number" type="text" placeholder={tr('الرقم')} value={qsNumber} onChange={(e) => setQsNumber(e.target.value)} />
               </div>
               {qsEmirate === 'other' && (
-                <input type="text" placeholder="اسم الدولة" style={{ marginTop: 6 }} value={qsCountry} onChange={(e) => setQsCountry(e.target.value)} />
+                <input type="text" placeholder={tr('اسم الدولة')} style={{ marginTop: 6 }} value={qsCountry} onChange={(e) => setQsCountry(e.target.value)} />
               )}
-              <button className="btn-lookup" style={{ width: '100%', marginTop: 8 }} onClick={handleQuickSearch}>بحث</button>
+              <button className="btn-lookup" style={{ width: '100%', marginTop: 8 }} onClick={handleQuickSearch}>{tr('بحث')}</button>
             </div>
           )}
 
@@ -489,7 +539,7 @@ export default function DailyEntryApp({
           {vehicleChoices.length > 0 && (
             <div style={{ marginTop: 8 }}>
               {vehicleChoices.map((v) => (
-                <button key={v.id} className="btn-lookup" style={{ width: '100%', marginTop: 6, textAlign: 'right' }} onClick={() => selectVehicleChoice(v)}>
+                <button key={v.id} className="btn-lookup" style={{ width: '100%', marginTop: 6, textAlign: 'inherit' }} onClick={() => selectVehicleChoice(v)}>
                   🚗 {plateDisplay(v)}{v.model ? ' — ' + v.model : ''}
                 </button>
               ))}
@@ -498,76 +548,78 @@ export default function DailyEntryApp({
         </div>
 
         <div className="card">
-          <h2><span className="dot" /> بيانات العميل</h2>
+          <h2><span className="dot" /> {tr('بيانات العميل')}</h2>
           <div className="field" style={{ marginBottom: 0 }}>
-            <label>رقم الجوال</label>
+            <label>{tr('رقم الجوال')}</label>
             <input type="tel" placeholder="05XXXXXXXX" maxLength={10} value={phone} onChange={(e) => setPhone(e.target.value)} />
           </div>
           <div className="field" style={{ marginBottom: 0, marginTop: 12 }}>
-            <label>اسم العميل (اختياري)</label>
-            <input type="text" placeholder="يمكن تخطيه — رقم الجوال كافٍ للتعريف" value={custName} onChange={(e) => setCustName(e.target.value)} />
+            <label>{tr('اسم العميل (اختياري)')}</label>
+            <input type="text" placeholder={tr('يمكن تخطيه — رقم الجوال كافٍ للتعريف')} value={custName} onChange={(e) => setCustName(e.target.value)} />
           </div>
         </div>
 
         <div className="card">
-          <h2><span className="dot" /> بيانات السيارة</h2>
+          <h2><span className="dot" /> {tr('بيانات السيارة')}</h2>
           {scanMsg && <div className={`lookup-msg show${scanMsg.isError ? ' error' : ''}`}>{scanMsg.text}</div>}
 
           <div className="field">
-            <label>رقم اللوحة</label>
+            <label>{tr('رقم اللوحة')}</label>
             <div className={`plate-wrap${noPlate ? ' disabled' : ''}`}>
               <select className="plate-emirate-select" value={plateEmirate} disabled={noPlate} onChange={(e) => setPlateEmirate(e.target.value)}>
-                {EMIRATES.map((em) => <option key={em} value={em}>{em}</option>)}
-                <option value="other">دولة أخرى</option>
+                {EMIRATES.map((em) => <option key={em} value={em}>{emirateLabel(em, lang)}</option>)}
+                <option value="other">{tr('دولة أخرى')}</option>
               </select>
-              <input className="plate-code" type="text" placeholder="الرمز" disabled={noPlate} value={plateCode} onChange={(e) => setPlateCode(e.target.value)} />
-              <input className="plate-number" type="text" placeholder="الرقم" disabled={noPlate} value={plateNumber} onChange={(e) => setPlateNumber(e.target.value)} onBlur={handlePlateBlur} />
+              <input className="plate-code" type="text" placeholder={tr('الرمز')} disabled={noPlate} value={plateCode} onChange={(e) => setPlateCode(e.target.value)} />
+              <input className="plate-number" type="text" placeholder={tr('الرقم')} disabled={noPlate} value={plateNumber} onChange={(e) => setPlateNumber(e.target.value)} onBlur={handlePlateBlur} />
             </div>
             {plateEmirate === 'other' && !noPlate && (
-              <input type="text" placeholder="اسم الدولة (مثال: عُمان)" style={{ marginTop: 6 }} value={plateCountry} onChange={(e) => setPlateCountry(e.target.value)} />
+              <input type="text" placeholder={tr('اسم الدولة (مثال: عُمان)')} style={{ marginTop: 6 }} value={plateCountry} onChange={(e) => setPlateCountry(e.target.value)} />
             )}
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, cursor: 'pointer' }}>
               <input type="checkbox" style={{ width: 16, height: 16 }} checked={noPlate} onChange={(e) => setNoPlate(e.target.checked)} />
-              <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>بدون لوحة (سيارة معرض / وارد للبيع)</span>
+              <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('بدون لوحة (سيارة معرض / وارد للبيع)')}</span>
             </label>
           </div>
 
           <div className="field" style={{ marginBottom: 0 }}>
-            <label>نوع/موديل السيارة (اختياري)</label>
-            <input type="text" placeholder="مثال: تويوتا كامري" value={model} onChange={(e) => setModel(e.target.value)} />
+            <label>{tr('نوع/موديل السيارة (اختياري)')}</label>
+            <input type="text" placeholder={tr('مثال: تويوتا كامري')} value={model} onChange={(e) => setModel(e.target.value)} />
           </div>
 
           <div className="field" style={{ marginBottom: 0, marginTop: 12 }}>
-            <label>نوع الهيكل (يحدد السعر تلقائياً)</label>
+            <label>{tr('نوع الهيكل (يحدد السعر تلقائياً)')}</label>
             <select value={bodyType} onChange={(e) => setBodyType(e.target.value as BodyType)}>
-              <option value="sedan">صالون</option>
-              <option value="fourwd">فورويل / SUV / بيك أب</option>
+              <option value="sedan">{BODY_LABEL_BY_LANG[lang].sedan}</option>
+              <option value="fourwd">{BODY_LABEL_BY_LANG[lang].fourwd}</option>
             </select>
           </div>
         </div>
 
         <div className="card">
-          <h2><span className="dot" /> الغسيل الأساسي</h2>
+          <h2><span className="dot" /> {tr('الغسيل الأساسي')}</h2>
           <div className="field" style={{ marginBottom: 8 }}>
-            <label>نوع الغسيل (السعر يظهر تلقائياً حسب نوع الهيكل)</label>
+            <label>{tr('نوع الغسيل (السعر يظهر تلقائياً حسب نوع الهيكل)')}</label>
             <select value={washCode} onChange={(e) => setWashCode(e.target.value)}>
-              <option value="none">بدون غسيل أساسي</option>
-              {config.washOptions.map((w) => <option key={w.code} value={w.code}>{w.name}</option>)}
+              <option value="none">{tr('بدون غسيل أساسي')}</option>
+              {config.washOptions.map((w) => <option key={w.code} value={w.code}>{catalogLabel(w, lang)}</option>)}
             </select>
           </div>
           {selectedWash && (
             <div style={{ fontSize: 12.5, color: 'var(--petrol-2)', fontWeight: 700 }}>
-              السعر ({BODY_LABEL[bodyType]}): {washPrice} AED
+              {lang === 'ar'
+                ? `السعر (${BODY_LABEL_BY_LANG.ar[bodyType]}): ${washPrice} AED`
+                : `Price (${BODY_LABEL_BY_LANG.en[bodyType]}): ${washPrice} AED`}
             </div>
           )}
 
           <div style={{ marginTop: 14 }}>
-            <label style={{ marginBottom: 8 }}>إضافات الغسيل (اختياري)</label>
+            <label style={{ marginBottom: 8 }}>{tr('إضافات الغسيل (اختياري)')}</label>
             <div className="services">
               {config.addonServices.map((a) => (
                 <div key={a.code} className={`svc-row${addonChecked.has(a.code) ? ' active' : ''}`}>
                   <input type="checkbox" checked={addonChecked.has(a.code)} onChange={() => toggleAddon(a.code)} />
-                  <div className="svc-name">{a.name}<span className="svc-tag">سعر ثابت</span></div>
+                  <div className="svc-name">{catalogLabel(a, lang)}<span className="svc-tag">{tr('سعر ثابت')}</span></div>
                   <input type="number" className="svc-price" value={a.price} readOnly />
                 </div>
               ))}
@@ -576,76 +628,81 @@ export default function DailyEntryApp({
         </div>
 
         <div className="card">
-          <h2><span className="dot" /> خدمات إضافية (تُدخل يدوياً)</h2>
+          <h2><span className="dot" /> {tr('خدمات إضافية (تُدخل يدوياً)')}</h2>
           <div className="services">
-            {config.manualServices.map((m) => (
-              <div key={m.code} className={`svc-row${manualChecked.has(m.code) ? ' active' : ''}`}>
-                <input type="checkbox" checked={manualChecked.has(m.code)} onChange={() => toggleManual(m.code)} />
-                <div className="svc-name">{m.name}<span className="svc-tag">{m.hint || 'يُدخل يدوياً'}</span></div>
-                <input
-                  type="number"
-                  className="svc-price"
-                  value={manualPrices[m.code] ?? 0}
-                  onChange={(e) => setManualPrices((prev) => ({ ...prev, [m.code]: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-            ))}
+            {config.manualServices.map((m) => {
+              const hint = lang === 'en' ? m.hint_en || m.hint : m.hint;
+              return (
+                <div key={m.code} className={`svc-row${manualChecked.has(m.code) ? ' active' : ''}`}>
+                  <input type="checkbox" checked={manualChecked.has(m.code)} onChange={() => toggleManual(m.code)} />
+                  <div className="svc-name">{catalogLabel(m, lang)}<span className="svc-tag">{hint || tr('يُدخل يدوياً')}</span></div>
+                  <input
+                    type="number"
+                    className="svc-price"
+                    value={manualPrices[m.code] ?? 0}
+                    onChange={(e) => setManualPrices((prev) => ({ ...prev, [m.code]: parseFloat(e.target.value) || 0 }))}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
 
         <div className="total-box">
-          <div><div className="lbl">الإجمالي</div></div>
+          <div><div className="lbl">{tr('الإجمالي')}</div></div>
           <div className="amt">{total}<span>AED</span></div>
         </div>
 
         <div className="card">
-          <h2><span className="dot" /> الدفع والتنفيذ</h2>
+          <h2><span className="dot" /> {tr('الدفع والتنفيذ')}</h2>
           <div className="field">
-            <label>حالة الدفع</label>
+            <label>{tr('حالة الدفع')}</label>
             <div className="pay-toggle">
-              <button className={payMethod === 'نقدي' ? 'sel' : ''} onClick={() => setPay('نقدي', 'paid')}>نقدي (الآن)</button>
-              <button className={payMethod === 'بطاقة' ? 'sel' : ''} onClick={() => setPay('بطاقة', 'paid')}>بطاقة (الآن)</button>
+              <button className={payMethod === 'نقدي' ? 'sel' : ''} onClick={() => setPay('نقدي', 'paid')}>{PAY_METHOD_LABEL_BY_LANG[lang]['نقدي']}</button>
+              <button className={payMethod === 'بطاقة' ? 'sel' : ''} onClick={() => setPay('بطاقة', 'paid')}>{PAY_METHOD_LABEL_BY_LANG[lang]['بطاقة']}</button>
             </div>
             <div className="pay-toggle" style={{ marginTop: 8 }}>
-              <button className={payMethod === 'آجل' ? 'sel' : ''} onClick={() => setPay('آجل', 'pending')}>آجل (لحين السداد)</button>
+              <button className={payMethod === 'آجل' ? 'sel' : ''} onClick={() => setPay('آجل', 'pending')}>{PAY_METHOD_LABEL_BY_LANG[lang]['آجل']}</button>
             </div>
             {payMethod === 'بطاقة' && (
               <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
-                <label>نوع البطاقة (لحساب عمولة البنك)</label>
+                <label>{tr('نوع البطاقة (لحساب عمولة البنك)')}</label>
                 <select value={cardType} onChange={(e) => setCardType(e.target.value as CardType)}>
                   {config.cardRates.map((r) => (
-                    <option key={r.card_type} value={r.card_type}>{r.label} (~{r.rate_percent}%)</option>
+                    <option key={r.card_type} value={r.card_type}>{lang === 'en' && r.label_en ? r.label_en : r.label} (~{r.rate_percent}%)</option>
                   ))}
                 </select>
                 {commissionPreview && (
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5 }}>
-                    عمولة البنك: {commissionPreview.commission.toFixed(2)} AED — الصافي الوارد للحساب: {commissionPreview.net.toFixed(2)} AED
+                    {lang === 'ar'
+                      ? `عمولة البنك: ${commissionPreview.commission.toFixed(2)} AED — الصافي الوارد للحساب: ${commissionPreview.net.toFixed(2)} AED`
+                      : `Bank commission: ${commissionPreview.commission.toFixed(2)} AED — Net to account: ${commissionPreview.net.toFixed(2)} AED`}
                   </div>
                 )}
               </div>
             )}
           </div>
           <div className="field">
-            <label>الموظف المنفّذ</label>
+            <label>{tr('الموظف المنفّذ')}</label>
             <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-              <option value="">اختر الموظف</option>
+              <option value="">{tr('اختر الموظف')}</option>
               {config.employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
             </select>
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
-            <label>ملاحظات (اختياري)</label>
-            <textarea placeholder="أي ملاحظات إضافية..." value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <label>{tr('ملاحظات (اختياري)')}</label>
+            <textarea placeholder={tr('أي ملاحظات إضافية...')} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
         </div>
 
         {editingId && (
           <div className="lookup-msg show" style={{ marginBottom: 10 }}>
-            ✏️ أنت الحين تعدّل عملية سابقة — الحفظ راح يحدّثها بدل ما يسجّل عملية جديدة.
+            {tr('✏️ أنت الحين تعدّل عملية سابقة — الحفظ راح يحدّثها بدل ما يسجّل عملية جديدة.')}
           </div>
         )}
         {formError && <div className="lookup-msg show error" style={{ marginBottom: 10 }}>{formError}</div>}
         <button className="submit-btn" disabled={submitting} onClick={handleSubmit}>
-          {submitting ? 'جاري الحفظ...' : editingId ? 'حفظ التعديلات' : 'تسجيل العملية'}
+          {submitting ? tr('جاري الحفظ...') : editingId ? tr('حفظ التعديلات') : tr('تسجيل العملية')}
         </button>
         {editingId && (
           <button
@@ -653,82 +710,86 @@ export default function DailyEntryApp({
             style={{ width: '100%', marginTop: 8, background: '#fff', color: 'var(--muted)', border: '1.5px solid var(--line)' }}
             onClick={handleCancelEdit}
           >
-            إلغاء التعديل
+            {tr('إلغاء التعديل')}
           </button>
         )}
 
         <div className="card" style={{ marginTop: 14 }}>
-          <h2><span className="dot" /> ملخص اليوم المالي</h2>
+          <h2><span className="dot" /> {tr('ملخص اليوم المالي')}</h2>
           <div>
             <div className="sum-row collected">
               <span className="sk">
-                مُحصَّل فعلياً (صافي بعد عمولة البنك)
-                <span className="sub">نقدي {summary.cash} + بطاقة (صافي) {summary.cardNet.toFixed(2)}{summary.collectedLater ? ' + محصّل لاحقاً ' + summary.collectedLater : ''}</span>
+                {tr('مُحصَّل فعلياً (صافي بعد عمولة البنك)')}
+                <span className="sub">
+                  {lang === 'ar'
+                    ? `نقدي ${summary.cash} + بطاقة (صافي) ${summary.cardNet.toFixed(2)}${summary.collectedLater ? ' + محصّل لاحقاً ' + summary.collectedLater : ''}`
+                    : `Cash ${summary.cash} + Card (net) ${summary.cardNet.toFixed(2)}${summary.collectedLater ? ' + Collected later ' + summary.collectedLater : ''}`}
+                </span>
               </span>
               <span className="sv">{summary.collected.toFixed(2)} AED</span>
             </div>
             {summary.cardCommission > 0 && (
               <div className="sum-row" style={{ color: '#a33' }}>
-                <span className="sk" style={{ color: '#a33' }}>عمولات البنك المقتطعة اليوم</span>
+                <span className="sk" style={{ color: '#a33' }}>{tr('عمولات البنك المقتطعة اليوم')}</span>
                 <span className="sv" style={{ color: '#a33' }}>− {summary.cardCommission.toFixed(2)} AED</span>
               </div>
             )}
             <div className="sum-row pending">
-              <span className="sk">آجل — غير محصَّل (لحين السداد)</span>
+              <span className="sk">{tr('آجل — غير محصَّل (لحين السداد)')}</span>
               <span className="sv">{summary.pending} AED</span>
             </div>
             <div className="sum-row grand">
-              <span className="sk">الإجمالي الكلي (حجم المبيعات — قبل خصم العمولة)</span>
+              <span className="sk">{tr('الإجمالي الكلي (حجم المبيعات — قبل خصم العمولة)')}</span>
               <span className="sv">{summary.grand} AED</span>
             </div>
           </div>
 
           <div style={{ borderTop: '1px dashed var(--line)', marginTop: 12, paddingTop: 12 }}>
             <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--petrol)', marginBottom: 6, display: 'block' }}>
-              🏦 تسوية مع رسالة البنك (اختياري — يومياً)
+              {tr('🏦 تسوية مع رسالة البنك (اختياري — يومياً)')}
             </label>
             <div className="phone-row">
-              <input type="number" placeholder="المبلغ الوارد من رسالة البنك اليوم" value={bankSmsAmount} onChange={(e) => setBankSmsAmount(e.target.value)} />
-              <button className="btn-lookup" onClick={handleReconcile}>احسب</button>
+              <input type="number" placeholder={tr('المبلغ الوارد من رسالة البنك اليوم')} value={bankSmsAmount} onChange={(e) => setBankSmsAmount(e.target.value)} />
+              <button className="btn-lookup" onClick={handleReconcile}>{tr('احسب')}</button>
             </div>
             {reconcileError && <div className="lookup-msg show error" style={{ marginTop: 8 }}>{reconcileError}</div>}
             {reconcileResult && (
               <div style={{ fontSize: 12.5, marginTop: 8 }}>
                 <div style={{ background: '#f3f1eb', borderRadius: 8, padding: 10 }}>
-                  إجمالي البطاقة بالنظام: <b>{reconcileResult.cardGrossToday} AED</b><br />
-                  الوارد فعلياً من البنك: <b>{reconcileResult.bankNet} AED</b><br />
-                  العمولة الفعلية اليوم: <b style={{ color: '#a33' }}>{reconcileResult.actualCommission.toFixed(2)} AED</b><br />
-                  النسبة الفعلية: <b style={{ color: 'var(--petrol)' }}>{reconcileResult.actualRate.toFixed(2)}%</b>
+                  {tr('إجمالي البطاقة بالنظام:')} <b>{reconcileResult.cardGrossToday} AED</b><br />
+                  {tr('الوارد فعلياً من البنك:')} <b>{reconcileResult.bankNet} AED</b><br />
+                  {tr('العمولة الفعلية اليوم:')} <b style={{ color: '#a33' }}>{reconcileResult.actualCommission.toFixed(2)} AED</b><br />
+                  {tr('النسبة الفعلية:')} <b style={{ color: 'var(--petrol)' }}>{reconcileResult.actualRate.toFixed(2)}%</b>
                 </div>
-                <div style={{ marginTop: 6, color: 'var(--muted)' }}>سجّل هذي النسبة كم يوم متتالي — لو تكررت، حدّثها بالإعدادات لضبط النظام بدقة بدل الانتظار.</div>
+                <div style={{ marginTop: 6, color: 'var(--muted)' }}>{tr('سجّل هذي النسبة كم يوم متتالي — لو تكررت، حدّثها بالإعدادات لضبط النظام بدقة بدل الانتظار.')}</div>
               </div>
             )}
           </div>
         </div>
 
         <div className="card">
-          <h2><span className="dot" /> المستحقات / كشف حساب عميل</h2>
+          <h2><span className="dot" /> {tr('المستحقات / كشف حساب عميل')}</h2>
           <div className="field">
             <div className="phone-row">
-              <input type="text" placeholder="رقم اللوحة (سيارة واحدة) أو رقم الجوال (كل سيارات نفس الشخص)" value={searchDue} onChange={(e) => handleSearchDue(e.target.value)} />
-              <button className="btn-lookup" onClick={() => handleSearchDue(searchDue)}>بحث</button>
+              <input type="text" placeholder={tr('رقم اللوحة (سيارة واحدة) أو رقم الجوال (كل سيارات نفس الشخص)')} value={searchDue} onChange={(e) => handleSearchDue(e.target.value)} />
+              <button className="btn-lookup" onClick={() => handleSearchDue(searchDue)}>{tr('بحث')}</button>
             </div>
           </div>
 
           {showList.length === 0 ? (
-            <div className="empty-log">{lastSearchQuery ? 'لا توجد عمليات مطابقة للبحث' : 'لا توجد مستحقات غير مسددة'}</div>
+            <div className="empty-log">{lastSearchQuery ? tr('لا توجد عمليات مطابقة للبحث') : tr('لا توجد مستحقات غير مسددة')}</div>
           ) : (
             <>
               <div style={{ background: '#f3f1eb', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
-                  <span>عدد العمليات: {showList.length}</span>
-                  <span>إجمالي كل العمليات: <b style={{ color: 'var(--petrol)' }}>{showList.reduce((s, e) => s + e.total, 0)} AED</b></span>
+                  <span>{tr('عدد العمليات:')} {showList.length}</span>
+                  <span>{tr('إجمالي كل العمليات:')} <b style={{ color: 'var(--petrol)' }}>{showList.reduce((s, e) => s + e.total, 0)} AED</b></span>
                 </div>
                 {(() => {
                   const outstanding = showList.filter((e) => e.payStatus !== 'paid').reduce((s, e) => s + e.total, 0);
                   return outstanding > 0 ? (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
-                      <span style={{ color: 'var(--muted)' }}>منها غير محصَّل:</span>
+                      <span style={{ color: 'var(--muted)' }}>{tr('منها غير محصَّل:')}</span>
                       <span style={{ fontFamily: "'Tajawal',sans-serif", fontWeight: 900, color: '#b8741c' }}>{outstanding} AED</span>
                     </div>
                   ) : null;
@@ -738,14 +799,14 @@ export default function DailyEntryApp({
                 <div key={e.id} className="log-item" style={{ alignItems: 'flex-start' }}>
                   <div>
                     <div className="li-main">{e.plate}</div>
-                    <div className="li-sub">{e.date} · {e.time} · {e.services.join('، ')}</div>
-                    <div className="li-sub" style={{ color: e.payStatus === 'paid' ? 'var(--success)' : '#b8741c', fontWeight: 700 }}>{PAY_STATUS_LABEL[e.payStatus]}</div>
+                    <div className="li-sub">{e.date} · {e.time} · {joinServices(e.services, lang)}</div>
+                    <div className="li-sub" style={{ color: e.payStatus === 'paid' ? 'var(--success)' : '#b8741c', fontWeight: 700 }}>{PAY_STATUS_LABEL_BY_LANG[lang][e.payStatus]}</div>
                   </div>
-                  <div style={{ textAlign: 'left' }}>
+                  <div style={{ textAlign: 'end' }}>
                     <div className="li-amt" style={{ marginBottom: 6 }}>{e.total} <span style={{ fontSize: 10 }}>AED</span></div>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                       {e.payStatus !== 'paid' && (
-                        <button className="btn-lookup" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => handleCollect(e.id)}>تحصيل الآن</button>
+                        <button className="btn-lookup" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => handleCollect(e.id)}>{tr('تحصيل الآن')}</button>
                       )}
                       <button
                         className="btn-lookup"
@@ -753,14 +814,14 @@ export default function DailyEntryApp({
                         disabled={loadingEditId === e.id}
                         onClick={() => handleEdit(e.id)}
                       >
-                        {loadingEditId === e.id ? '...' : 'تعديل'}
+                        {loadingEditId === e.id ? '...' : tr('تعديل')}
                       </button>
                       <button
                         className="btn-lookup"
                         style={{ fontSize: 11, padding: '6px 10px', background: '#a33' }}
                         onClick={() => handleDelete(e.id)}
                       >
-                        حذف
+                        {tr('حذف')}
                       </button>
                     </div>
                   </div>
@@ -768,7 +829,7 @@ export default function DailyEntryApp({
               ))}
               {lastSearchQuery && (
                 <button className="btn-lookup" style={{ width: '100%', marginTop: 10, background: '#25D366', color: '#fff' }} onClick={shareStatement}>
-                  📤 مشاركة الكشف عبر واتساب
+                  {tr('📤 مشاركة الكشف عبر واتساب')}
                 </button>
               )}
             </>
@@ -776,20 +837,20 @@ export default function DailyEntryApp({
         </div>
 
         <div className="card" style={{ marginTop: 16 }}>
-          <h2><span className="dot" /> سجل اليوم</h2>
+          <h2><span className="dot" /> {tr('سجل اليوم')}</h2>
           {entries.length === 0 ? (
-            <div className="empty-log">لا توجد عمليات مسجلة اليوم بعد</div>
+            <div className="empty-log">{tr('لا توجد عمليات مسجلة اليوم بعد')}</div>
           ) : (
             entries.map((e) => (
               <div key={e.id} className="log-item" style={{ alignItems: 'flex-start' }}>
                 <div>
                   <div className="li-main">{e.customerName} — {e.plate}</div>
                   <div className="li-sub">
-                    {e.services.join('، ')} · {e.employeeName} · {e.time} ·{' '}
-                    <span style={{ color: e.payStatus === 'paid' ? 'var(--success)' : '#b8741c', fontWeight: 700 }}>{PAY_STATUS_LABEL[e.payStatus]}</span>
+                    {joinServices(e.services, lang)} · {e.employeeName} · {e.time} ·{' '}
+                    <span style={{ color: e.payStatus === 'paid' ? 'var(--success)' : '#b8741c', fontWeight: 700 }}>{PAY_STATUS_LABEL_BY_LANG[lang][e.payStatus]}</span>
                   </div>
                 </div>
-                <div style={{ textAlign: 'left' }}>
+                <div style={{ textAlign: 'end' }}>
                   <div className="li-amt" style={{ marginBottom: 6 }}>{e.total} <span style={{ fontSize: 10 }}>AED</span></div>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                     <button
@@ -798,14 +859,14 @@ export default function DailyEntryApp({
                       disabled={loadingEditId === e.id}
                       onClick={() => handleEdit(e.id)}
                     >
-                      {loadingEditId === e.id ? '...' : 'تعديل'}
+                      {loadingEditId === e.id ? '...' : tr('تعديل')}
                     </button>
                     <button
                       className="btn-lookup"
                       style={{ fontSize: 11, padding: '6px 10px', background: '#a33' }}
                       onClick={() => handleDelete(e.id)}
                     >
-                      حذف
+                      {tr('حذف')}
                     </button>
                   </div>
                 </div>
@@ -814,6 +875,6 @@ export default function DailyEntryApp({
           )}
         </div>
       </main>
-    </>
+    </div>
   );
 }

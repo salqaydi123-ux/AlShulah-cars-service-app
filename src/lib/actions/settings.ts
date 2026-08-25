@@ -20,6 +20,7 @@ async function closeCurrentRow(table: string, matchColumn: string, matchValue: s
 export interface WashOptionInput {
   code: string;
   name: string;
+  nameEn: string;
   sedanPrice: number;
   fourwdPrice: number;
   sortOrder: number;
@@ -31,6 +32,7 @@ export async function upsertWashOption(input: WashOptionInput) {
   const { error } = await db.from('wash_options').insert({
     code: input.code,
     name: input.name,
+    name_en: input.nameEn.trim() || null,
     sedan_price: input.sedanPrice,
     fourwd_price: input.fourwdPrice,
     sort_order: input.sortOrder,
@@ -43,6 +45,7 @@ export async function upsertWashOption(input: WashOptionInput) {
 export interface AddonServiceInput {
   code: string;
   name: string;
+  nameEn: string;
   price: number;
   sortOrder: number;
 }
@@ -53,6 +56,7 @@ export async function upsertAddonService(input: AddonServiceInput) {
   const { error } = await db.from('addon_services').insert({
     code: input.code,
     name: input.name,
+    name_en: input.nameEn.trim() || null,
     price: input.price,
     sort_order: input.sortOrder,
   });
@@ -64,7 +68,9 @@ export async function upsertAddonService(input: AddonServiceInput) {
 export interface ManualServiceInput {
   code: string;
   name: string;
+  nameEn: string;
   hint: string;
+  hintEn: string;
   sortOrder: number;
 }
 
@@ -74,7 +80,9 @@ export async function upsertManualService(input: ManualServiceInput) {
   const { error } = await db.from('manual_services').insert({
     code: input.code,
     name: input.name,
+    name_en: input.nameEn.trim() || null,
     hint: input.hint || null,
+    hint_en: input.hintEn.trim() || null,
     sort_order: input.sortOrder,
   });
   if (error) throw new Error(error.message);
@@ -85,6 +93,7 @@ export async function upsertManualService(input: ManualServiceInput) {
 export interface CardRateInput {
   cardType: CardType;
   label: string;
+  labelEn: string;
   ratePercent: number;
 }
 
@@ -94,6 +103,7 @@ export async function upsertCardRate(input: CardRateInput) {
   const { error } = await db.from('card_commission_rates').insert({
     card_type: input.cardType,
     label: input.label,
+    label_en: input.labelEn.trim() || null,
     rate_percent: input.ratePercent,
   });
   if (error) throw new Error(error.message);
@@ -129,10 +139,10 @@ export async function setEmployeeActive(id: string, active: boolean) {
 }
 
 export interface AdminConfigSnapshot {
-  washOptions: { id: string; code: string; name: string; sedan_price: number; fourwd_price: number; sort_order: number }[];
-  addonServices: { id: string; code: string; name: string; price: number; sort_order: number }[];
-  manualServices: { id: string; code: string; name: string; hint: string | null; sort_order: number }[];
-  cardRates: { id: string; card_type: string; label: string; rate_percent: number }[];
+  washOptions: { id: string; code: string; name: string; name_en: string | null; sedan_price: number; fourwd_price: number; sort_order: number }[];
+  addonServices: { id: string; code: string; name: string; name_en: string | null; price: number; sort_order: number }[];
+  manualServices: { id: string; code: string; name: string; name_en: string | null; hint: string | null; hint_en: string | null; sort_order: number }[];
+  cardRates: { id: string; card_type: string; label: string; label_en: string | null; rate_percent: number }[];
   employees: { id: string; name: string; active: boolean; sort_order: number }[];
 }
 

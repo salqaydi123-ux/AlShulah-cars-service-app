@@ -8,6 +8,7 @@ export interface WashOption {
   id: string;
   code: string;
   name: string;
+  name_en: string | null;
   sedan_price: number;
   fourwd_price: number;
   sort_order: number;
@@ -17,6 +18,7 @@ export interface AddonService {
   id: string;
   code: string;
   name: string;
+  name_en: string | null;
   price: number;
   sort_order: number;
 }
@@ -25,7 +27,9 @@ export interface ManualService {
   id: string;
   code: string;
   name: string;
+  name_en: string | null;
   hint: string | null;
+  hint_en: string | null;
   sort_order: number;
 }
 
@@ -33,6 +37,7 @@ export interface CardCommissionRate {
   id: string;
   card_type: CardType;
   label: string;
+  label_en: string | null;
   rate_percent: number;
 }
 
@@ -117,7 +122,7 @@ export interface TransactionEntry {
   netAmount: number;
   total: number;
   notes: string | null;
-  services: string[];
+  services: { name: string; nameEn: string | null }[];
 }
 
 export interface TodaySummary {

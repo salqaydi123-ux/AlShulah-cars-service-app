@@ -17,13 +17,13 @@ export default async function LoginPage({
         <form action={loginAction}>
           <input type="hidden" name="next" value={next} />
           <div className="field" style={{ textAlign: 'right' }}>
-            <label>كلمة المرور</label>
+            <label>كلمة المرور / Password</label>
             <input type="password" name="password" placeholder="••••••••" autoFocus required />
           </div>
           <button type="submit" className="submit-btn">
-            دخول
+            دخول / Login
           </button>
-          {hasError && <div className="login-error">كلمة المرور غير صحيحة</div>}
+          {hasError && <div className="login-error">كلمة المرور غير صحيحة / Incorrect password</div>}
         </form>
       </div>
     </div>

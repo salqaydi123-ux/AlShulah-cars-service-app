@@ -17,8 +17,9 @@ function SavedTick({ show }: { show: boolean }) {
   return <span className="save-msg">✓ تم الحفظ</span>;
 }
 
-function WashRow({ row, onSaved }: { row: AdminConfigSnapshot['washOptions'][number]; onSaved: () => void }) {
+function WashRow({ row }: { row: AdminConfigSnapshot['washOptions'][number] }) {
   const [name, setName] = useState(row.name);
+  const [nameEn, setNameEn] = useState(row.name_en || '');
   const [sedan, setSedan] = useState(String(row.sedan_price));
   const [fourwd, setFourwd] = useState(String(row.fourwd_price));
   const [saving, setSaving] = useState(false);
@@ -31,12 +32,12 @@ function WashRow({ row, onSaved }: { row: AdminConfigSnapshot['washOptions'][num
       await upsertWashOption({
         code: row.code,
         name,
+        nameEn,
         sedanPrice: parseFloat(sedan) || 0,
         fourwdPrice: parseFloat(fourwd) || 0,
         sortOrder: row.sort_order,
       });
       setSaved(true);
-      onSaved();
     } finally {
       setSaving(false);
     }
@@ -45,6 +46,14 @@ function WashRow({ row, onSaved }: { row: AdminConfigSnapshot['washOptions'][num
   return (
     <div className="svc-row" style={{ flexWrap: 'wrap' }}>
       <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: '1 1 100%', marginBottom: 6 }} />
+      <input
+        type="text"
+        dir="ltr"
+        placeholder="English name"
+        value={nameEn}
+        onChange={(e) => setNameEn(e.target.value)}
+        style={{ flex: '1 1 100%', marginBottom: 6 }}
+      />
       <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center' }}>
         <label style={{ margin: 0, whiteSpace: 'nowrap' }}>صالون</label>
         <input type="number" className="svc-price" value={sedan} onChange={(e) => setSedan(e.target.value)} />
@@ -59,18 +68,24 @@ function WashRow({ row, onSaved }: { row: AdminConfigSnapshot['washOptions'][num
 
 function PriceRow({
   name: initialName,
+  nameEn: initialNameEn,
   price: initialPrice,
   extra,
+  extraEn,
   onSave,
 }: {
   name: string;
+  nameEn: string;
   price: string;
   extra?: string;
-  onSave: (name: string, price: string, extra?: string) => Promise<void>;
+  extraEn?: string;
+  onSave: (name: string, nameEn: string, price: string, extra?: string, extraEn?: string) => Promise<void>;
 }) {
   const [name, setName] = useState(initialName);
+  const [nameEn, setNameEn] = useState(initialNameEn);
   const [price, setPrice] = useState(initialPrice);
   const [extraVal, setExtraVal] = useState(extra ?? '');
+  const [extraEnVal, setExtraEnVal] = useState(extraEn ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -78,7 +93,7 @@ function PriceRow({
     setSaving(true);
     setSaved(false);
     try {
-      await onSave(name, price, extra !== undefined ? extraVal : undefined);
+      await onSave(name, nameEn, price, extra !== undefined ? extraVal : undefined, extraEn !== undefined ? extraEnVal : undefined);
       setSaved(true);
     } finally {
       setSaving(false);
@@ -88,8 +103,26 @@ function PriceRow({
   return (
     <div className="svc-row" style={{ flexWrap: 'wrap' }}>
       <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: '1 1 100%', marginBottom: 6 }} />
+      <input
+        type="text"
+        dir="ltr"
+        placeholder="English name"
+        value={nameEn}
+        onChange={(e) => setNameEn(e.target.value)}
+        style={{ flex: '1 1 100%', marginBottom: 6 }}
+      />
       {extra !== undefined && (
         <input type="text" placeholder="ملاحظة إرشادية (اختياري)" value={extraVal} onChange={(e) => setExtraVal(e.target.value)} style={{ flex: '1 1 100%', marginBottom: 6 }} />
+      )}
+      {extraEn !== undefined && (
+        <input
+          type="text"
+          dir="ltr"
+          placeholder="Guideline note (English, optional)"
+          value={extraEnVal}
+          onChange={(e) => setExtraEnVal(e.target.value)}
+          style={{ flex: '1 1 100%', marginBottom: 6 }}
+        />
       )}
       <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center' }}>
         {price !== '' && (
@@ -107,6 +140,7 @@ function PriceRow({
 
 function CardRateRow({ row }: { row: AdminConfigSnapshot['cardRates'][number] }) {
   const [label, setLabel] = useState(row.label);
+  const [labelEn, setLabelEn] = useState(row.label_en || '');
   const [rate, setRate] = useState(String(row.rate_percent));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -115,7 +149,7 @@ function CardRateRow({ row }: { row: AdminConfigSnapshot['cardRates'][number] })
     setSaving(true);
     setSaved(false);
     try {
-      await upsertCardRate({ cardType: row.card_type as any, label, ratePercent: parseFloat(rate) || 0 });
+      await upsertCardRate({ cardType: row.card_type as any, label, labelEn, ratePercent: parseFloat(rate) || 0 });
       setSaved(true);
     } finally {
       setSaving(false);
@@ -125,6 +159,14 @@ function CardRateRow({ row }: { row: AdminConfigSnapshot['cardRates'][number] })
   return (
     <div className="svc-row" style={{ flexWrap: 'wrap' }}>
       <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: '1 1 100%', marginBottom: 6 }} />
+      <input
+        type="text"
+        dir="ltr"
+        placeholder="English label"
+        value={labelEn}
+        onChange={(e) => setLabelEn(e.target.value)}
+        style={{ flex: '1 1 100%', marginBottom: 6 }}
+      />
       <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center' }}>
         <label style={{ margin: 0, whiteSpace: 'nowrap' }}>النسبة %</label>
         <input type="number" step="0.1" className="svc-price" value={rate} onChange={(e) => setRate(e.target.value)} />
@@ -207,12 +249,14 @@ export default function AdminSettings({ config }: { config: AdminConfigSnapshot 
       <main>
         <div className="note">
           كل تعديل هنا يُحفظ بتاريخه — العمليات السابقة تحتفظ بالسعر/النسبة التي كانت سارية وقت تنفيذها، ولا تتأثر بأي تعديل لاحق.
+          <br />
+          أدخل الاسم الإنجليزي (اختياري) لكل خدمة حتى يشوفها العمال الذين لا يقرؤون العربية بلغتهم عند تفعيل وضع English بالصفحة الرئيسية.
         </div>
 
         <div className="card">
           <h2><span className="dot" /> أسعار الغسيل الأساسي</h2>
           <div className="services">
-            {config.washOptions.map((w) => <WashRow key={w.id} row={w} onSaved={() => {}} />)}
+            {config.washOptions.map((w) => <WashRow key={w.id} row={w} />)}
           </div>
         </div>
 
@@ -223,9 +267,10 @@ export default function AdminSettings({ config }: { config: AdminConfigSnapshot 
               <PriceRow
                 key={a.id}
                 name={a.name}
+                nameEn={a.name_en || ''}
                 price={String(a.price)}
-                onSave={async (name, price) => {
-                  await upsertAddonService({ code: a.code, name, price: parseFloat(price) || 0, sortOrder: a.sort_order });
+                onSave={async (name, nameEn, price) => {
+                  await upsertAddonService({ code: a.code, name, nameEn, price: parseFloat(price) || 0, sortOrder: a.sort_order });
                 }}
               />
             ))}
@@ -239,10 +284,12 @@ export default function AdminSettings({ config }: { config: AdminConfigSnapshot 
               <PriceRow
                 key={m.id}
                 name={m.name}
+                nameEn={m.name_en || ''}
                 price=""
                 extra={m.hint || ''}
-                onSave={async (name, _price, hint) => {
-                  await upsertManualService({ code: m.code, name, hint: hint || '', sortOrder: m.sort_order });
+                extraEn={m.hint_en || ''}
+                onSave={async (name, nameEn, _price, hint, hintEn) => {
+                  await upsertManualService({ code: m.code, name, nameEn, hint: hint || '', hintEn: hintEn || '', sortOrder: m.sort_order });
                 }}
               />
             ))}

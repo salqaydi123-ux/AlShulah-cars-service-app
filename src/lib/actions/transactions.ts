@@ -137,21 +137,21 @@ async function upsertCustomerAndVehicle(
 }
 
 async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: SubmitTransactionInput) {
-  const serviceRows: { service_group: 'wash' | 'addon' | 'manual'; service_code: string; service_name: string; price: number }[] = [];
+  const serviceRows: { service_group: 'wash' | 'addon' | 'manual'; service_code: string; service_name: string; service_name_en: string | null; price: number }[] = [];
 
   if (input.washCode) {
     const { data: wash, error } = await db.from('wash_options').select('*').eq('code', input.washCode).eq('is_current', true).maybeSingle();
     if (error) throw new Error(error.message);
     if (!wash) throw new Error('نوع الغسيل غير موجود بالإعدادات الحالية');
     const price = input.bodyType === 'sedan' ? wash.sedan_price : wash.fourwd_price;
-    serviceRows.push({ service_group: 'wash', service_code: wash.code, service_name: wash.name, price });
+    serviceRows.push({ service_group: 'wash', service_code: wash.code, service_name: wash.name, service_name_en: wash.name_en, price });
   }
 
   if (input.addonCodes.length > 0) {
     const { data: addons, error } = await db.from('addon_services').select('*').in('code', input.addonCodes).eq('is_current', true);
     if (error) throw new Error(error.message);
     for (const a of addons ?? []) {
-      serviceRows.push({ service_group: 'addon', service_code: a.code, service_name: a.name, price: a.price });
+      serviceRows.push({ service_group: 'addon', service_code: a.code, service_name: a.name, service_name_en: a.name_en, price: a.price });
     }
   }
 
@@ -162,7 +162,7 @@ async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: Sub
     for (const m of input.manualEntries) {
       const def = manuals?.find((x) => x.code === m.code);
       if (!def) continue;
-      serviceRows.push({ service_group: 'manual', service_code: def.code, service_name: def.name, price: m.price });
+      serviceRows.push({ service_group: 'manual', service_code: def.code, service_name: def.name, service_name_en: def.name_en, price: m.price });
     }
   }
 
@@ -241,7 +241,7 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
     netAmount: tx.net_amount,
     total: tx.total,
     notes: tx.notes,
-    services: serviceRows.map((r) => r.service_name),
+    services: serviceRows.map((r) => ({ name: r.service_name, nameEn: r.service_name_en })),
   };
 }
 
@@ -306,7 +306,7 @@ export async function updateTransaction(transactionId: string, input: SubmitTran
     netAmount: tx.net_amount,
     total: tx.total,
     notes: tx.notes,
-    services: serviceRows.map((r) => r.service_name),
+    services: serviceRows.map((r) => ({ name: r.service_name, nameEn: r.service_name_en })),
   };
 }
 
@@ -358,7 +358,7 @@ export async function listToday(): Promise<TransactionEntry[]> {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from('transactions')
-    .select('*, customers(phone, name), transaction_services(service_name)')
+    .select('*, customers(phone, name), transaction_services(service_name, service_name_en)')
     .eq('tx_date', todayDateStr())
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
@@ -379,7 +379,7 @@ export async function listToday(): Promise<TransactionEntry[]> {
     netAmount: Number(row.net_amount),
     total: Number(row.total),
     notes: row.notes,
-    services: (row.transaction_services ?? []).map((s: any) => s.service_name),
+    services: (row.transaction_services ?? []).map((s: any) => ({ name: s.service_name, nameEn: s.service_name_en })),
   }));
 }
 
@@ -405,7 +405,7 @@ export async function searchStatement(query: string): Promise<TransactionEntry[]
 
   let rowsQuery = db
     .from('transactions')
-    .select('*, customers(phone, name), transaction_services(service_name)')
+    .select('*, customers(phone, name), transaction_services(service_name, service_name_en)')
     .order('created_at', { ascending: false });
 
   // نجلب دفعة معقولة ونفلتر بالجافاسكربت بدل الاعتماد على or() عبر جدول مرتبط (سلوكه غير موثوق بـ PostgREST).
@@ -437,7 +437,7 @@ export async function searchStatement(query: string): Promise<TransactionEntry[]
     netAmount: Number(row.net_amount),
     total: Number(row.total),
     notes: row.notes,
-    services: (row.transaction_services ?? []).map((s: any) => s.service_name),
+    services: (row.transaction_services ?? []).map((s: any) => ({ name: s.service_name, nameEn: s.service_name_en })),
   }));
 }
 
