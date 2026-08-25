@@ -5,9 +5,12 @@ import { logoutAction } from '@/lib/actions/auth';
 import { searchByPhone, searchByPlate } from '@/lib/actions/lookup';
 import {
   collectPayment,
+  deleteTransaction,
+  getTransactionDetail,
   reconcileBank,
   searchStatement,
   submitTransaction,
+  updateTransaction,
 } from '@/lib/actions/transactions';
 import { BODY_LABEL, CARD_LABEL, EMIRATES, PAY_STATUS_LABEL } from '@/lib/constants';
 import type {
@@ -55,6 +58,8 @@ export default function DailyEntryApp({
   const [entries, setEntries] = useState<TransactionEntry[]>(initialEntries);
   const [, startTransition] = useTransition();
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [loadingEditId, setLoadingEditId] = useState<string | null>(null);
 
   // بحث سريع
   const [searchMode, setSearchMode] = useState<'phone' | 'plate'>('phone');
@@ -269,9 +274,58 @@ export default function DailyEntryApp({
     setCardType('debit');
     setNotes('');
     resetSearchFields();
+    setEditingId(null);
   }
 
   const [formError, setFormError] = useState<string | null>(null);
+
+  async function handleEdit(id: string) {
+    setFormError(null);
+    setLoadingEditId(id);
+    try {
+      const detail = await getTransactionDetail(id);
+      setPhone(detail.phone);
+      setCustName(detail.custName);
+      setPlateEmirate(detail.plateEmirate || EMIRATES[0]);
+      setPlateCode(detail.plateCode);
+      setPlateNumber(detail.plateNumber);
+      setPlateCountry(detail.plateCountry);
+      setNoPlate(detail.isNoPlate);
+      setModel(detail.model);
+      setBodyType(detail.bodyType);
+      setWashCode(detail.washCode || 'none');
+      setAddonChecked(new Set(detail.addonCodes));
+      setManualChecked(new Set(detail.manualEntries.map((m) => m.code)));
+      setManualPrices(Object.fromEntries(detail.manualEntries.map((m) => [m.code, m.price])));
+      setPay(detail.payMethod, detail.payStatus);
+      if (detail.cardType) setCardType(detail.cardType);
+      setEmployeeId(detail.employeeId);
+      setNotes(detail.notes);
+      setScanMsg(null);
+      setEditingId(id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err: any) {
+      setFormError(err?.message || 'تعذّر تحميل بيانات العملية للتعديل.');
+    } finally {
+      setLoadingEditId(null);
+    }
+  }
+
+  function handleCancelEdit() {
+    resetForm();
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm('متأكد تبغى تحذف هذي العملية؟ لا يمكن التراجع بعد الحذف.')) return;
+    setEntries((prev) => prev.filter((e) => e.id !== id));
+    setPendingList((prev) => prev.filter((e) => e.id !== id));
+    if (editingId === id) resetForm();
+    try {
+      await deleteTransaction(id);
+    } catch (err: any) {
+      setFormError(err?.message || 'تعذّر حذف العملية — حدّث الصفحة وحاول مرة أخرى.');
+    }
+  }
 
   async function handleSubmit() {
     setFormError(null);
@@ -282,7 +336,7 @@ export default function DailyEntryApp({
 
     setSubmitting(true);
     try {
-      const entry = await submitTransaction({
+      const payload = {
         phone: phone.trim(),
         custName: custName.trim(),
         plateEmirate,
@@ -300,8 +354,16 @@ export default function DailyEntryApp({
         cardType: payMethod === 'بطاقة' ? cardType : null,
         employeeId,
         notes,
-      });
-      setEntries((prev) => [entry, ...prev]);
+      };
+
+      if (editingId) {
+        const updated = await updateTransaction(editingId, payload);
+        setEntries((prev) => prev.map((e) => (e.id === editingId ? updated : e)));
+        setPendingList((prev) => prev.map((e) => (e.id === editingId ? updated : e)));
+      } else {
+        const entry = await submitTransaction(payload);
+        setEntries((prev) => [entry, ...prev]);
+      }
       resetForm();
     } catch (err: any) {
       setFormError(err?.message || 'حدث خطأ أثناء الحفظ، حاول مرة أخرى.');
@@ -576,10 +638,24 @@ export default function DailyEntryApp({
           </div>
         </div>
 
+        {editingId && (
+          <div className="lookup-msg show" style={{ marginBottom: 10 }}>
+            ✏️ أنت الحين تعدّل عملية سابقة — الحفظ راح يحدّثها بدل ما يسجّل عملية جديدة.
+          </div>
+        )}
         {formError && <div className="lookup-msg show error" style={{ marginBottom: 10 }}>{formError}</div>}
         <button className="submit-btn" disabled={submitting} onClick={handleSubmit}>
-          {submitting ? 'جاري الحفظ...' : 'تسجيل العملية'}
+          {submitting ? 'جاري الحفظ...' : editingId ? 'حفظ التعديلات' : 'تسجيل العملية'}
         </button>
+        {editingId && (
+          <button
+            className="btn-lookup"
+            style={{ width: '100%', marginTop: 8, background: '#fff', color: 'var(--muted)', border: '1.5px solid var(--line)' }}
+            onClick={handleCancelEdit}
+          >
+            إلغاء التعديل
+          </button>
+        )}
 
         <div className="card" style={{ marginTop: 14 }}>
           <h2><span className="dot" /> ملخص اليوم المالي</h2>
@@ -667,9 +743,26 @@ export default function DailyEntryApp({
                   </div>
                   <div style={{ textAlign: 'left' }}>
                     <div className="li-amt" style={{ marginBottom: 6 }}>{e.total} <span style={{ fontSize: 10 }}>AED</span></div>
-                    {e.payStatus !== 'paid' && (
-                      <button className="btn-lookup" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => handleCollect(e.id)}>تحصيل الآن</button>
-                    )}
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      {e.payStatus !== 'paid' && (
+                        <button className="btn-lookup" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => handleCollect(e.id)}>تحصيل الآن</button>
+                      )}
+                      <button
+                        className="btn-lookup"
+                        style={{ fontSize: 11, padding: '6px 10px' }}
+                        disabled={loadingEditId === e.id}
+                        onClick={() => handleEdit(e.id)}
+                      >
+                        {loadingEditId === e.id ? '...' : 'تعديل'}
+                      </button>
+                      <button
+                        className="btn-lookup"
+                        style={{ fontSize: 11, padding: '6px 10px', background: '#a33' }}
+                        onClick={() => handleDelete(e.id)}
+                      >
+                        حذف
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -688,7 +781,7 @@ export default function DailyEntryApp({
             <div className="empty-log">لا توجد عمليات مسجلة اليوم بعد</div>
           ) : (
             entries.map((e) => (
-              <div key={e.id} className="log-item">
+              <div key={e.id} className="log-item" style={{ alignItems: 'flex-start' }}>
                 <div>
                   <div className="li-main">{e.customerName} — {e.plate}</div>
                   <div className="li-sub">
@@ -696,7 +789,26 @@ export default function DailyEntryApp({
                     <span style={{ color: e.payStatus === 'paid' ? 'var(--success)' : '#b8741c', fontWeight: 700 }}>{PAY_STATUS_LABEL[e.payStatus]}</span>
                   </div>
                 </div>
-                <div className="li-amt">{e.total} <span style={{ fontSize: 10 }}>AED</span></div>
+                <div style={{ textAlign: 'left' }}>
+                  <div className="li-amt" style={{ marginBottom: 6 }}>{e.total} <span style={{ fontSize: 10 }}>AED</span></div>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button
+                      className="btn-lookup"
+                      style={{ fontSize: 11, padding: '6px 10px' }}
+                      disabled={loadingEditId === e.id}
+                      onClick={() => handleEdit(e.id)}
+                    >
+                      {loadingEditId === e.id ? '...' : 'تعديل'}
+                    </button>
+                    <button
+                      className="btn-lookup"
+                      style={{ fontSize: 11, padding: '6px 10px', background: '#a33' }}
+                      onClick={() => handleDelete(e.id)}
+                    >
+                      حذف
+                    </button>
+                  </div>
+                </div>
               </div>
             ))
           )}

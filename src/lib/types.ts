@@ -97,6 +97,10 @@ export interface SubmitTransactionInput {
   notes: string;
 }
 
+export interface TransactionDetail extends SubmitTransactionInput {
+  id: string;
+}
+
 export interface TransactionEntry {
   id: string;
   date: string; // YYYY-MM-DD

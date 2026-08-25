@@ -6,6 +6,7 @@ import type {
   BodyType,
   SubmitTransactionInput,
   TodaySummary,
+  TransactionDetail,
   TransactionEntry,
 } from '@/lib/types';
 
@@ -28,19 +29,25 @@ function buildPlateDisplay(v: {
   return `${v.plate_emirate} ${v.plate_code} ${v.plate_number}`.trim();
 }
 
-export async function submitTransaction(input: SubmitTransactionInput): Promise<TransactionEntry> {
-  const db = supabaseAdmin();
-  const phone = input.phone.trim();
-  const nameRaw = input.custName.trim();
-
-  if (!phone) throw new Error('رقم الجوال مطلوب');
+function validateInput(input: SubmitTransactionInput) {
+  if (!input.phone.trim()) throw new Error('رقم الجوال مطلوب');
   if (!input.isNoPlate && !input.plateNumber.trim()) throw new Error('رقم اللوحة مطلوب');
   if (!input.employeeId) throw new Error('الموظف المنفّذ مطلوب');
   if (!input.washCode && input.addonCodes.length === 0 && input.manualEntries.length === 0) {
     throw new Error('اختر خدمة واحدة على الأقل');
   }
+}
 
-  // 1) العميل — إيجاد أو إنشاء بمفتاح رقم الجوال
+type VehicleDisplay = { plate_emirate: string; plate_code: string; plate_number: string; plate_country: string | null; is_no_plate: boolean };
+
+async function upsertCustomerAndVehicle(
+  db: ReturnType<typeof supabaseAdmin>,
+  input: SubmitTransactionInput
+): Promise<{ customerId: string; vehicleId: string; vehicleDisplay: VehicleDisplay }> {
+  const phone = input.phone.trim();
+  const nameRaw = input.custName.trim();
+
+  // العميل — إيجاد أو إنشاء بمفتاح رقم الجوال
   const { data: existingCustomer, error: custFindErr } = await db
     .from('customers')
     .select('*')
@@ -56,18 +63,14 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
       if (error) throw new Error(error.message);
     }
   } else {
-    const { data, error } = await db
-      .from('customers')
-      .insert({ phone, name: nameRaw || null })
-      .select('id')
-      .single();
+    const { data, error } = await db.from('customers').insert({ phone, name: nameRaw || null }).select('id').single();
     if (error) throw new Error(error.message);
     customerId = data.id;
   }
 
-  // 2) السيارة — إيجاد أو إنشاء بمفتاح (الإمارة+الرمز+الرقم)، أو إنشاء سجل مؤقت لسيارات بدون لوحة
-  let vehicleId: string | null = null;
-  let vehicleDisplay: { plate_emirate: string; plate_code: string; plate_number: string; plate_country: string | null; is_no_plate: boolean };
+  // السيارة — إيجاد أو إنشاء بمفتاح (الإمارة+الرمز+الرقم)، أو إنشاء سجل مؤقت لسيارات بدون لوحة
+  let vehicleId: string;
+  let vehicleDisplay: VehicleDisplay;
 
   if (input.isNoPlate) {
     const tempRef = 'بدون لوحة — معرض #' + Date.now().toString().slice(-5);
@@ -120,14 +123,7 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
     } else {
       const { data, error } = await db
         .from('vehicles')
-        .insert({
-          plate_emirate: plateEmirate,
-          plate_code: plateCode,
-          plate_number: plateNumber,
-          plate_country: plateCountry,
-          is_no_plate: false,
-          ...patch,
-        })
+        .insert({ plate_emirate: plateEmirate, plate_code: plateCode, plate_number: plateNumber, plate_country: plateCountry, is_no_plate: false, ...patch })
         .select('id')
         .single();
       if (error) throw new Error(error.message);
@@ -137,16 +133,14 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
     vehicleDisplay = { plate_emirate: plateEmirate, plate_code: plateCode, plate_number: plateNumber, plate_country: plateCountry, is_no_plate: false };
   }
 
-  // 3) لقطات الخدمات المختارة (سعر واسم وقت التنفيذ)
+  return { customerId, vehicleId, vehicleDisplay };
+}
+
+async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: SubmitTransactionInput) {
   const serviceRows: { service_group: 'wash' | 'addon' | 'manual'; service_code: string; service_name: string; price: number }[] = [];
 
   if (input.washCode) {
-    const { data: wash, error } = await db
-      .from('wash_options')
-      .select('*')
-      .eq('code', input.washCode)
-      .eq('is_current', true)
-      .maybeSingle();
+    const { data: wash, error } = await db.from('wash_options').select('*').eq('code', input.washCode).eq('is_current', true).maybeSingle();
     if (error) throw new Error(error.message);
     if (!wash) throw new Error('نوع الغسيل غير موجود بالإعدادات الحالية');
     const price = input.bodyType === 'sedan' ? wash.sedan_price : wash.fourwd_price;
@@ -172,19 +166,15 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
     }
   }
 
-  const total = serviceRows.reduce((s, r) => s + r.price, 0);
+  return serviceRows;
+}
 
-  // 4) العمولة البنكية (لقطة من الجدول الحالي وقت العملية)
+async function computeCommission(db: ReturnType<typeof supabaseAdmin>, input: SubmitTransactionInput, total: number) {
   let commissionRate = 0;
   let commissionAmount = 0;
   let netAmount = total;
   if (input.payMethod === 'بطاقة' && input.cardType) {
-    const { data: rate, error } = await db
-      .from('card_commission_rates')
-      .select('*')
-      .eq('card_type', input.cardType)
-      .eq('is_current', true)
-      .maybeSingle();
+    const { data: rate, error } = await db.from('card_commission_rates').select('*').eq('card_type', input.cardType).eq('is_current', true).maybeSingle();
     if (error) throw new Error(error.message);
     if (rate) {
       commissionRate = rate.rate_percent;
@@ -192,8 +182,18 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
       netAmount = Math.round((total - commissionAmount) * 100) / 100;
     }
   }
+  return { commissionRate, commissionAmount, netAmount };
+}
 
-  // 5) الموظف
+export async function submitTransaction(input: SubmitTransactionInput): Promise<TransactionEntry> {
+  validateInput(input);
+  const db = supabaseAdmin();
+
+  const { customerId, vehicleId, vehicleDisplay } = await upsertCustomerAndVehicle(db, input);
+  const serviceRows = await buildServiceRows(db, input);
+  const total = serviceRows.reduce((s, r) => s + r.price, 0);
+  const { commissionRate, commissionAmount, netAmount } = await computeCommission(db, input, total);
+
   const { data: employee, error: empErr } = await db.from('employees').select('*').eq('id', input.employeeId).maybeSingle();
   if (empErr) throw new Error(empErr.message);
   if (!employee) throw new Error('الموظف غير موجود');
@@ -222,17 +222,15 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
     .single();
   if (txErr) throw new Error(txErr.message);
 
-  const { error: svcErr } = await db.from('transaction_services').insert(
-    serviceRows.map((r) => ({ transaction_id: tx.id, ...r }))
-  );
+  const { error: svcErr } = await db.from('transaction_services').insert(serviceRows.map((r) => ({ transaction_id: tx.id, ...r })));
   if (svcErr) throw new Error(svcErr.message);
 
   return {
     id: tx.id,
     date: tx.tx_date,
     time: tx.tx_time.slice(0, 5),
-    customerName: nameRaw || 'عميلنا العزيز',
-    phone,
+    customerName: input.custName.trim() || 'عميلنا العزيز',
+    phone: input.phone.trim(),
     plate: tx.vehicle_plate_snapshot,
     model: input.model.trim() || null,
     employeeName: employee.name,
@@ -244,6 +242,115 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
     total: tx.total,
     notes: tx.notes,
     services: serviceRows.map((r) => r.service_name),
+  };
+}
+
+export async function updateTransaction(transactionId: string, input: SubmitTransactionInput): Promise<TransactionEntry> {
+  validateInput(input);
+  const db = supabaseAdmin();
+
+  const { data: existingTx, error: existingErr } = await db.from('transactions').select('tx_date, tx_time').eq('id', transactionId).maybeSingle();
+  if (existingErr) throw new Error(existingErr.message);
+  if (!existingTx) throw new Error('العملية غير موجودة — ربما تم حذفها مسبقاً');
+
+  const { customerId, vehicleId, vehicleDisplay } = await upsertCustomerAndVehicle(db, input);
+  const serviceRows = await buildServiceRows(db, input);
+  const total = serviceRows.reduce((s, r) => s + r.price, 0);
+  const { commissionRate, commissionAmount, netAmount } = await computeCommission(db, input, total);
+
+  const { data: employee, error: empErr } = await db.from('employees').select('*').eq('id', input.employeeId).maybeSingle();
+  if (empErr) throw new Error(empErr.message);
+  if (!employee) throw new Error('الموظف غير موجود');
+
+  const { data: tx, error: txErr } = await db
+    .from('transactions')
+    .update({
+      customer_id: customerId,
+      vehicle_id: vehicleId,
+      vehicle_plate_snapshot: buildPlateDisplay(vehicleDisplay),
+      employee_id: employee.id,
+      employee_name_snapshot: employee.name,
+      pay_status: input.payStatus,
+      pay_method: input.payMethod,
+      card_type: input.cardType,
+      commission_rate_snapshot: commissionRate,
+      commission_amount: commissionAmount,
+      net_amount: netAmount,
+      total,
+      notes: input.notes.trim() || null,
+    })
+    .eq('id', transactionId)
+    .select('*')
+    .single();
+  if (txErr) throw new Error(txErr.message);
+
+  // نستبدل خدمات العملية بالكامل بدل تعديلها سطر بسطر — أبسط ويطابق دائماً الاختيار الحالي بالنموذج
+  const { error: delErr } = await db.from('transaction_services').delete().eq('transaction_id', transactionId);
+  if (delErr) throw new Error(delErr.message);
+  const { error: svcErr } = await db.from('transaction_services').insert(serviceRows.map((r) => ({ transaction_id: transactionId, ...r })));
+  if (svcErr) throw new Error(svcErr.message);
+
+  return {
+    id: tx.id,
+    date: tx.tx_date,
+    time: String(tx.tx_time).slice(0, 5),
+    customerName: input.custName.trim() || 'عميلنا العزيز',
+    phone: input.phone.trim(),
+    plate: tx.vehicle_plate_snapshot,
+    model: input.model.trim() || null,
+    employeeName: employee.name,
+    payMethod: tx.pay_method,
+    payStatus: tx.pay_status,
+    cardType: tx.card_type,
+    commissionAmount: tx.commission_amount,
+    netAmount: tx.net_amount,
+    total: tx.total,
+    notes: tx.notes,
+    services: serviceRows.map((r) => r.service_name),
+  };
+}
+
+export async function deleteTransaction(transactionId: string): Promise<void> {
+  const db = supabaseAdmin();
+  const { error } = await db.from('transactions').delete().eq('id', transactionId);
+  if (error) throw new Error(error.message);
+}
+
+export async function getTransactionDetail(transactionId: string): Promise<TransactionDetail> {
+  const db = supabaseAdmin();
+  const { data: tx, error } = await db
+    .from('transactions')
+    .select('*, customers(phone, name), vehicles(*), transaction_services(*)')
+    .eq('id', transactionId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!tx) throw new Error('العملية غير موجودة — ربما تم حذفها مسبقاً');
+
+  const vehicle = tx.vehicles;
+  const services: { service_group: string; service_code: string; price: number }[] = tx.transaction_services ?? [];
+  const washRow = services.find((s) => s.service_group === 'wash');
+  const addonCodes = services.filter((s) => s.service_group === 'addon').map((s) => s.service_code);
+  const manualEntries = services.filter((s) => s.service_group === 'manual').map((s) => ({ code: s.service_code, price: Number(s.price) }));
+
+  return {
+    id: tx.id,
+    phone: tx.customers?.phone ?? '',
+    custName: tx.customers?.name ?? '',
+    plateEmirate: vehicle?.plate_emirate || 'الشارقة',
+    plateCode: vehicle?.plate_code || '',
+    plateNumber: vehicle?.is_no_plate ? '' : vehicle?.plate_number || '',
+    plateCountry: vehicle?.plate_country || '',
+    isNoPlate: vehicle?.is_no_plate ?? false,
+    model: vehicle?.model || '',
+    bodyType: vehicle?.body_type || 'sedan',
+    washCode: washRow ? washRow.service_code : null,
+    addonCodes,
+    manualEntries,
+    payMethod: tx.pay_method,
+    payStatus: tx.pay_status,
+    cardType: tx.card_type,
+    employeeId: tx.employee_id || '',
+    notes: tx.notes || '',
   };
 }
 
