@@ -76,6 +76,7 @@ function WashRow({ row }: { row: AdminConfigSnapshot['washOptions'][number] }) {
   const [nameEn, setNameEn] = useState(row.name_en || '');
   const [sedan, setSedan] = useState(String(row.sedan_price));
   const [fourwd, setFourwd] = useState(String(row.fourwd_price));
+  const [isManualPrice, setIsManualPrice] = useState(row.is_manual_price);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -89,6 +90,7 @@ function WashRow({ row }: { row: AdminConfigSnapshot['washOptions'][number] }) {
         nameEn,
         sedanPrice: parseFloat(sedan) || 0,
         fourwdPrice: parseFloat(fourwd) || 0,
+        isManualPrice,
         sortOrder: row.sort_order,
       });
       setSaved(true);
@@ -108,12 +110,16 @@ function WashRow({ row }: { row: AdminConfigSnapshot['washOptions'][number] }) {
         onChange={(e) => setNameEn(e.target.value)}
         style={{ flex: '1 1 100%', marginBottom: 6 }}
       />
-      <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 6px', cursor: 'pointer', flex: '1 1 100%' }}>
+        <input type="checkbox" style={{ width: 16, height: 16 }} checked={isManualPrice} onChange={(e) => setIsManualPrice(e.target.checked)} />
+        <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>سعر يدوي (يُدخل بكل عملية) بدل السعر الثابت أدناه</span>
+      </label>
+      <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center', opacity: isManualPrice ? 0.5 : 1 }}>
         <label style={{ margin: 0, whiteSpace: 'nowrap' }}>صالون</label>
-        <input type="number" className="svc-price" value={sedan} onChange={(e) => setSedan(e.target.value)} />
+        <input type="number" className="svc-price" value={sedan} disabled={isManualPrice} onChange={(e) => setSedan(e.target.value)} />
         <label style={{ margin: 0, whiteSpace: 'nowrap' }}>فورويل</label>
-        <input type="number" className="svc-price" value={fourwd} onChange={(e) => setFourwd(e.target.value)} />
-        <button className="btn-lookup" disabled={saving} onClick={save}>{saving ? '...' : 'حفظ'}</button>
+        <input type="number" className="svc-price" value={fourwd} disabled={isManualPrice} onChange={(e) => setFourwd(e.target.value)} />
+        <button className="btn-lookup" disabled={saving} onClick={save} style={{ opacity: 1 }}>{saving ? '...' : 'حفظ'}</button>
       </div>
       <SavedTick show={saved} />
     </div>

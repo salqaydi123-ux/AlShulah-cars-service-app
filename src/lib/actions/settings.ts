@@ -23,6 +23,7 @@ export interface WashOptionInput {
   nameEn: string;
   sedanPrice: number;
   fourwdPrice: number;
+  isManualPrice: boolean;
   sortOrder: number;
 }
 
@@ -35,6 +36,7 @@ export async function upsertWashOption(input: WashOptionInput) {
     name_en: input.nameEn.trim() || null,
     sedan_price: input.sedanPrice,
     fourwd_price: input.fourwdPrice,
+    is_manual_price: input.isManualPrice,
     sort_order: input.sortOrder,
   });
   if (error) throw new Error(error.message);
@@ -139,7 +141,7 @@ export async function setEmployeeActive(id: string, active: boolean) {
 }
 
 export interface AdminConfigSnapshot {
-  washOptions: { id: string; code: string; name: string; name_en: string | null; sedan_price: number; fourwd_price: number; sort_order: number }[];
+  washOptions: { id: string; code: string; name: string; name_en: string | null; sedan_price: number; fourwd_price: number; is_manual_price: boolean; sort_order: number }[];
   addonServices: { id: string; code: string; name: string; name_en: string | null; price: number; sort_order: number }[];
   manualServices: { id: string; code: string; name: string; name_en: string | null; hint: string | null; hint_en: string | null; sort_order: number }[];
   cardRates: { id: string; card_type: string; label: string; label_en: string | null; rate_percent: number }[];

@@ -117,6 +117,7 @@ export default function DailyEntryApp({
 
   // الخدمات
   const [washCode, setWashCode] = useState<string>('none');
+  const [washManualPrice, setWashManualPrice] = useState<number>(0);
   const [addonChecked, setAddonChecked] = useState<Set<string>>(new Set());
   const [manualChecked, setManualChecked] = useState<Set<string>>(new Set());
   const [manualPrices, setManualPrices] = useState<Record<string, number>>(emptyManualPrices);
@@ -142,7 +143,13 @@ export default function DailyEntryApp({
   const summary = useMemo(() => buildSummary(entries), [entries]);
 
   const selectedWash = config.washOptions.find((w) => w.code === washCode);
-  const washPrice = selectedWash ? (bodyType === 'sedan' ? selectedWash.sedan_price : selectedWash.fourwd_price) : 0;
+  const washPrice = selectedWash
+    ? selectedWash.is_manual_price
+      ? washManualPrice
+      : bodyType === 'sedan'
+        ? selectedWash.sedan_price
+        : selectedWash.fourwd_price
+    : 0;
 
   const total = useMemo(() => {
     let sum = washPrice;
@@ -312,6 +319,7 @@ export default function DailyEntryApp({
     setBodyType('sedan');
     setScanMsg(null);
     setWashCode('none');
+    setWashManualPrice(0);
     setAddonChecked(new Set());
     setManualChecked(new Set());
     setManualPrices({});
@@ -339,6 +347,7 @@ export default function DailyEntryApp({
       setModel(detail.model);
       setBodyType(detail.bodyType);
       setWashCode(detail.washCode || 'none');
+      setWashManualPrice(detail.washManualPrice || 0);
       setAddonChecked(new Set(detail.addonCodes));
       setManualChecked(new Set(detail.manualEntries.map((m) => m.code)));
       setManualPrices(Object.fromEntries(detail.manualEntries.map((m) => [m.code, m.price])));
@@ -378,6 +387,10 @@ export default function DailyEntryApp({
       setFormError(tr('الرجاء تعبئة: رقم الجوال، رقم اللوحة، خدمة واحدة على الأقل (غسيل أساسي أو إضافة)، والموظف المنفّذ.'));
       return;
     }
+    if (selectedWash?.is_manual_price && washManualPrice <= 0) {
+      setFormError(tr('أدخل سعر الغسيل الأساسي'));
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -392,6 +405,7 @@ export default function DailyEntryApp({
         model,
         bodyType,
         washCode: washCode !== 'none' ? washCode : null,
+        washManualPrice,
         addonCodes: Array.from(addonChecked),
         manualEntries: Array.from(manualChecked).map((code) => ({ code, price: manualPrices[code] || 0 })),
         payMethod,
@@ -600,12 +614,24 @@ export default function DailyEntryApp({
           <h2><span className="dot" /> {tr('الغسيل الأساسي')}</h2>
           <div className="field" style={{ marginBottom: 8 }}>
             <label>{tr('نوع الغسيل (السعر يظهر تلقائياً حسب نوع الهيكل)')}</label>
-            <select value={washCode} onChange={(e) => setWashCode(e.target.value)}>
+            <select value={washCode} onChange={(e) => { setWashCode(e.target.value); setWashManualPrice(0); }}>
               <option value="none">{tr('بدون غسيل أساسي')}</option>
               {config.washOptions.map((w) => <option key={w.code} value={w.code}>{catalogLabel(w, lang)}</option>)}
             </select>
           </div>
-          {selectedWash && (
+          {selectedWash && selectedWash.is_manual_price && (
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>{tr('أدخل سعر الغسيل الأساسي')}</label>
+              <input
+                type="number"
+                className="svc-price"
+                style={{ width: 120 }}
+                value={washManualPrice || ''}
+                onChange={(e) => setWashManualPrice(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          )}
+          {selectedWash && !selectedWash.is_manual_price && (
             <div style={{ fontSize: 12.5, color: 'var(--petrol-2)', fontWeight: 700 }}>
               {lang === 'ar'
                 ? `السعر (${BODY_LABEL_BY_LANG.ar[bodyType]}): ${washPrice} AED`

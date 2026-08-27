@@ -11,6 +11,7 @@ export interface WashOption {
   name_en: string | null;
   sedan_price: number;
   fourwd_price: number;
+  is_manual_price: boolean;
   sort_order: number;
 }
 
@@ -93,6 +94,7 @@ export interface SubmitTransactionInput {
   model: string;
   bodyType: BodyType;
   washCode: string | null; // code من WASH_OPTIONS أو null لو "بدون غسيل أساسي"
+  washManualPrice: number; // يُستخدم فقط إذا كان نوع الغسيل المختار is_manual_price
   addonCodes: string[];
   manualEntries: { code: string; price: number }[];
   payMethod: PayMethod;

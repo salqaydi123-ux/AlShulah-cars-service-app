@@ -143,7 +143,11 @@ async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: Sub
     const { data: wash, error } = await db.from('wash_options').select('*').eq('code', input.washCode).eq('is_current', true).maybeSingle();
     if (error) throw new Error(error.message);
     if (!wash) throw new Error('نوع الغسيل غير موجود بالإعدادات الحالية');
-    const price = input.bodyType === 'sedan' ? wash.sedan_price : wash.fourwd_price;
+    let price = input.bodyType === 'sedan' ? wash.sedan_price : wash.fourwd_price;
+    if (wash.is_manual_price) {
+      if (!input.washManualPrice || input.washManualPrice <= 0) throw new Error('أدخل سعر الغسيل الأساسي');
+      price = input.washManualPrice;
+    }
     serviceRows.push({ service_group: 'wash', service_code: wash.code, service_name: wash.name, service_name_en: wash.name_en, price });
   }
 
@@ -344,6 +348,7 @@ export async function getTransactionDetail(transactionId: string): Promise<Trans
     model: vehicle?.model || '',
     bodyType: vehicle?.body_type || 'sedan',
     washCode: washRow ? washRow.service_code : null,
+    washManualPrice: washRow ? Number(washRow.price) : 0,
     addonCodes,
     manualEntries,
     payMethod: tx.pay_method,
