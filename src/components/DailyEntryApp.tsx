@@ -6,9 +6,11 @@ import { searchByPhone, searchByPlate } from '@/lib/actions/lookup';
 import {
   collectPayment,
   deleteTransaction,
+  getReconciliationForDate,
   getTransactionDetail,
-  reconcileBank,
+  reconcileBankForDate,
   searchStatement,
+  searchStatementByPlate,
   submitTransaction,
   updateTransaction,
 } from '@/lib/actions/transactions';
@@ -67,11 +69,13 @@ export default function DailyEntryApp({
   initialEntries,
   initialSummary,
   initialReconciliation,
+  todayDate,
 }: {
   config: FormConfig;
   initialEntries: TransactionEntry[];
   initialSummary: TodaySummary;
   initialReconciliation: BankReconciliationResult | null;
+  todayDate: string;
 }) {
   const [lang, setLang] = useState<Lang>('ar');
   const tr = (s: string) => t(s, lang);
@@ -130,12 +134,19 @@ export default function DailyEntryApp({
   const [notes, setNotes] = useState('');
 
   // الملخص والتسوية
-  const [bankSmsAmount, setBankSmsAmount] = useState('');
+  const [reconcileDate, setReconcileDate] = useState(todayDate);
+  const [bankSmsAmount, setBankSmsAmount] = useState(initialReconciliation ? String(initialReconciliation.bankNet) : '');
   const [reconcileResult, setReconcileResult] = useState<BankReconciliationResult | null>(initialReconciliation);
   const [reconcileError, setReconcileError] = useState<string | null>(null);
+  const [reconcileLoading, setReconcileLoading] = useState(false);
 
   // المستحقات
+  const [dueMode, setDueMode] = useState<'phone' | 'plate'>('phone');
   const [searchDue, setSearchDue] = useState('');
+  const [dueEmirate, setDueEmirate] = useState<string>(EMIRATES[0]);
+  const [dueCode, setDueCode] = useState('');
+  const [dueNumber, setDueNumber] = useState('');
+  const [dueCountry, setDueCountry] = useState('');
   const [pendingList, setPendingList] = useState<TransactionEntry[]>([]);
   const [pendingLoaded, setPendingLoaded] = useState(false);
   const [lastSearchQuery, setLastSearchQuery] = useState('');
@@ -162,15 +173,6 @@ export default function DailyEntryApp({
     }
     return sum;
   }, [washPrice, addonChecked, manualChecked, manualPrices, config]);
-
-  const cardRate = config.cardRates.find((r) => r.card_type === cardType);
-  const commissionPreview =
-    payMethod === 'بطاقة' && cardRate
-      ? {
-          commission: Math.round(total * cardRate.rate_percent) / 100,
-          net: Math.round((total - Math.round(total * cardRate.rate_percent) / 100) * 100) / 100,
-        }
-      : null;
 
   function resetSearchFields() {
     setSearchMode((m) => m);
@@ -431,23 +433,61 @@ export default function DailyEntryApp({
     }
   }
 
+  async function handleReconcileDateChange(date: string) {
+    setReconcileDate(date);
+    setReconcileError(null);
+    try {
+      const existing = await getReconciliationForDate(date);
+      setReconcileResult(existing);
+      setBankSmsAmount(existing ? String(existing.bankNet) : '');
+    } catch {
+      /* تجاهل — يبقى الحقل فاضي لو تعذّر الجلب */
+    }
+  }
+
   async function handleReconcile() {
     setReconcileError(null);
     const amount = parseFloat(bankSmsAmount);
     if (Number.isNaN(amount)) return;
+    setReconcileLoading(true);
     try {
-      const result = await reconcileBank(amount);
+      const result = await reconcileBankForDate(reconcileDate, amount);
       setReconcileResult(result);
     } catch (err: any) {
       setReconcileError(err?.message || tr('تعذّر حساب التسوية'));
       setReconcileResult(null);
+    } finally {
+      setReconcileLoading(false);
     }
+  }
+
+  function switchDueMode(mode: 'phone' | 'plate') {
+    setDueMode(mode);
+    setSearchDue('');
+    setDueEmirate(EMIRATES[0]);
+    setDueCode('');
+    setDueNumber('');
+    setDueCountry('');
+    setPendingList([]);
+    setPendingLoaded(false);
+    setLastSearchQuery('');
   }
 
   async function handleSearchDue(q: string) {
     setSearchDue(q);
     setLastSearchQuery(q.trim());
     const results = await searchStatement(q.trim());
+    setPendingList(results);
+    setPendingLoaded(true);
+  }
+
+  async function handleSearchDuePlate() {
+    const number = dueNumber.trim();
+    if (!number) return;
+    const query = { plateEmirate: dueEmirate, plateCode: dueCode, plateNumber: number, plateCountry: dueCountry };
+    const displayPlate = dueEmirate === 'other' ? `${dueCountry || '—'} ${dueCode} ${number}`.trim() : `${dueEmirate} ${dueCode} ${number}`.trim();
+    setLastSearchQuery(displayPlate);
+    const results = await searchStatementByPlate(query);
     setPendingList(results);
     setPendingLoaded(true);
   }
@@ -480,12 +520,8 @@ export default function DailyEntryApp({
     if (outstanding > 0) msg += `المتبقي غير المحصَّل: ${outstanding} AED\n`;
 
     const encoded = encodeURIComponent(msg);
-    let url: string;
-    if (/^05\d{8}$/.test(lastSearchQuery)) {
-      url = `https://wa.me/971${lastSearchQuery.slice(1)}?text=${encoded}`;
-    } else {
-      url = `https://api.whatsapp.com/send?text=${encoded}`;
-    }
+    const targetPhone = /^05\d{8}$/.test(lastSearchQuery) ? lastSearchQuery : /^05\d{8}$/.test(list[0].phone) ? list[0].phone : '';
+    const url = targetPhone ? `https://wa.me/971${targetPhone.slice(1)}?text=${encoded}` : `https://api.whatsapp.com/send?text=${encoded}`;
     window.open(url, '_blank');
   }
 
@@ -692,19 +728,12 @@ export default function DailyEntryApp({
             </div>
             {payMethod === 'بطاقة' && (
               <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
-                <label>{tr('نوع البطاقة (لحساب عمولة البنك)')}</label>
+                <label>{tr('نوع البطاقة')}</label>
                 <select value={cardType} onChange={(e) => setCardType(e.target.value as CardType)}>
                   {config.cardRates.map((r) => (
-                    <option key={r.card_type} value={r.card_type}>{lang === 'en' && r.label_en ? r.label_en : r.label} (~{r.rate_percent}%)</option>
+                    <option key={r.card_type} value={r.card_type}>{lang === 'en' && r.label_en ? r.label_en : r.label}</option>
                   ))}
                 </select>
-                {commissionPreview && (
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5 }}>
-                    {lang === 'ar'
-                      ? `عمولة البنك: ${commissionPreview.commission.toFixed(2)} AED — الصافي الوارد للحساب: ${commissionPreview.net.toFixed(2)} AED`
-                      : `Bank commission: ${commissionPreview.commission.toFixed(2)} AED — Net to account: ${commissionPreview.net.toFixed(2)} AED`}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -745,49 +774,51 @@ export default function DailyEntryApp({
           <div>
             <div className="sum-row collected">
               <span className="sk">
-                {tr('مُحصَّل فعلياً (صافي بعد عمولة البنك)')}
+                {tr('مُحصَّل فعلياً')}
                 <span className="sub">
                   {lang === 'ar'
-                    ? `نقدي ${summary.cash} + بطاقة (صافي) ${summary.cardNet.toFixed(2)}${summary.collectedLater ? ' + محصّل لاحقاً ' + summary.collectedLater : ''}`
-                    : `Cash ${summary.cash} + Card (net) ${summary.cardNet.toFixed(2)}${summary.collectedLater ? ' + Collected later ' + summary.collectedLater : ''}`}
+                    ? `نقدي ${summary.cash} + بطاقة ${summary.cardNet.toFixed(2)}${summary.collectedLater ? ' + محصّل لاحقاً ' + summary.collectedLater : ''}`
+                    : `Cash ${summary.cash} + Card ${summary.cardNet.toFixed(2)}${summary.collectedLater ? ' + Collected later ' + summary.collectedLater : ''}`}
                 </span>
               </span>
               <span className="sv">{summary.collected.toFixed(2)} AED</span>
             </div>
-            {summary.cardCommission > 0 && (
-              <div className="sum-row" style={{ color: '#a33' }}>
-                <span className="sk" style={{ color: '#a33' }}>{tr('عمولات البنك المقتطعة اليوم')}</span>
-                <span className="sv" style={{ color: '#a33' }}>− {summary.cardCommission.toFixed(2)} AED</span>
-              </div>
-            )}
             <div className="sum-row pending">
               <span className="sk">{tr('آجل — غير محصَّل (لحين السداد)')}</span>
               <span className="sv">{summary.pending} AED</span>
             </div>
             <div className="sum-row grand">
-              <span className="sk">{tr('الإجمالي الكلي (حجم المبيعات — قبل خصم العمولة)')}</span>
+              <span className="sk">{tr('الإجمالي الكلي (حجم المبيعات)')}</span>
               <span className="sv">{summary.grand} AED</span>
             </div>
           </div>
 
           <div style={{ borderTop: '1px dashed var(--line)', marginTop: 12, paddingTop: 12 }}>
             <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--petrol)', marginBottom: 6, display: 'block' }}>
-              {tr('🏦 تسوية مع رسالة البنك (اختياري — يومياً)')}
+              {tr('🏦 تسوية مع رسالة البنك (لأي تاريخ)')}
             </label>
-            <div className="phone-row">
-              <input type="number" placeholder={tr('المبلغ الوارد من رسالة البنك اليوم')} value={bankSmsAmount} onChange={(e) => setBankSmsAmount(e.target.value)} />
-              <button className="btn-lookup" onClick={handleReconcile}>{tr('احسب')}</button>
+            <div className="row2" style={{ marginBottom: 8 }}>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>{tr('التاريخ')}</label>
+                <input type="date" value={reconcileDate} max={todayDate} onChange={(e) => handleReconcileDateChange(e.target.value)} />
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>{tr('المبلغ الفعلي من رسالة البنك')}</label>
+                <input type="number" value={bankSmsAmount} onChange={(e) => setBankSmsAmount(e.target.value)} />
+              </div>
             </div>
+            <button className="btn-lookup" style={{ width: '100%' }} disabled={reconcileLoading} onClick={handleReconcile}>
+              {reconcileLoading ? tr('جاري الحساب...') : tr('احسب واحفظ')}
+            </button>
             {reconcileError && <div className="lookup-msg show error" style={{ marginTop: 8 }}>{reconcileError}</div>}
             {reconcileResult && (
               <div style={{ fontSize: 12.5, marginTop: 8 }}>
                 <div style={{ background: '#f3f1eb', borderRadius: 8, padding: 10 }}>
                   {tr('إجمالي البطاقة بالنظام:')} <b>{reconcileResult.cardGrossToday} AED</b><br />
                   {tr('الوارد فعلياً من البنك:')} <b>{reconcileResult.bankNet} AED</b><br />
-                  {tr('العمولة الفعلية اليوم:')} <b style={{ color: '#a33' }}>{reconcileResult.actualCommission.toFixed(2)} AED</b><br />
+                  {tr('العمولة الفعلية:')} <b style={{ color: '#a33' }}>{reconcileResult.actualCommission.toFixed(2)} AED</b><br />
                   {tr('النسبة الفعلية:')} <b style={{ color: 'var(--petrol)' }}>{reconcileResult.actualRate.toFixed(2)}%</b>
                 </div>
-                <div style={{ marginTop: 6, color: 'var(--muted)' }}>{tr('سجّل هذي النسبة كم يوم متتالي — لو تكررت، حدّثها بالإعدادات لضبط النظام بدقة بدل الانتظار.')}</div>
               </div>
             )}
           </div>
@@ -795,12 +826,34 @@ export default function DailyEntryApp({
 
         <div className="card">
           <h2><span className="dot" /> {tr('المستحقات / كشف حساب عميل')}</h2>
-          <div className="field">
-            <div className="phone-row">
-              <input type="text" placeholder={tr('رقم اللوحة (سيارة واحدة) أو رقم الجوال (كل سيارات نفس الشخص)')} value={searchDue} onChange={(e) => handleSearchDue(e.target.value)} />
-              <button className="btn-lookup" onClick={() => handleSearchDue(searchDue)}>{tr('بحث')}</button>
-            </div>
+          <div className="pay-toggle" style={{ marginBottom: 10 }}>
+            <button className={dueMode === 'phone' ? 'sel' : ''} onClick={() => switchDueMode('phone')}>{tr('برقم الجوال')}</button>
+            <button className={dueMode === 'plate' ? 'sel' : ''} onClick={() => switchDueMode('plate')}>{tr('برقم اللوحة')}</button>
           </div>
+
+          {dueMode === 'phone' ? (
+            <div className="field">
+              <div className="phone-row">
+                <input type="text" placeholder={tr('رقم الجوال (كل سيارات نفس الشخص)')} value={searchDue} onChange={(e) => handleSearchDue(e.target.value)} />
+                <button className="btn-lookup" onClick={() => handleSearchDue(searchDue)}>{tr('بحث')}</button>
+              </div>
+            </div>
+          ) : (
+            <div className="field">
+              <div className="plate-wrap">
+                <select className="plate-emirate-select" value={dueEmirate} onChange={(e) => setDueEmirate(e.target.value)}>
+                  {EMIRATES.map((em) => <option key={em} value={em}>{emirateLabel(em, lang)}</option>)}
+                  <option value="other">{tr('دولة أخرى')}</option>
+                </select>
+                <input className="plate-code" type="text" placeholder={tr('الرمز')} value={dueCode} onChange={(e) => setDueCode(e.target.value)} />
+                <input className="plate-number" type="text" placeholder={tr('الرقم')} value={dueNumber} onChange={(e) => setDueNumber(e.target.value)} />
+              </div>
+              {dueEmirate === 'other' && (
+                <input type="text" placeholder={tr('اسم الدولة')} style={{ marginTop: 6 }} value={dueCountry} onChange={(e) => setDueCountry(e.target.value)} />
+              )}
+              <button className="btn-lookup" style={{ width: '100%', marginTop: 8 }} onClick={handleSearchDuePlate}>{tr('بحث')}</button>
+            </div>
+          )}
 
           {showList.length === 0 ? (
             <div className="empty-log">{lastSearchQuery ? tr('لا توجد عمليات مطابقة للبحث') : tr('لا توجد مستحقات غير مسددة')}</div>

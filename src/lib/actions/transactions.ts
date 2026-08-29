@@ -15,6 +15,10 @@ function todayDateStr(): string {
   return new Date().toLocaleDateString('en-CA');
 }
 
+export async function getServerTodayDate(): Promise<string> {
+  return todayDateStr();
+}
+
 function buildPlateDisplay(v: {
   plate_emirate: string;
   plate_code: string;
@@ -28,6 +32,29 @@ function buildPlateDisplay(v: {
   }
   return `${v.plate_emirate} ${v.plate_code} ${v.plate_number}`.trim();
 }
+
+function mapTxRow(row: any): TransactionEntry {
+  return {
+    id: row.id,
+    date: row.tx_date,
+    time: String(row.tx_time).slice(0, 5),
+    customerName: row.customers?.name || 'عميلنا العزيز',
+    phone: row.customers?.phone || '',
+    plate: row.vehicle_plate_snapshot,
+    model: null,
+    employeeName: row.employee_name_snapshot,
+    payMethod: row.pay_method,
+    payStatus: row.pay_status,
+    cardType: row.card_type,
+    commissionAmount: Number(row.commission_amount),
+    netAmount: Number(row.net_amount),
+    total: Number(row.total),
+    notes: row.notes,
+    services: (row.transaction_services ?? []).map((s: any) => ({ name: s.service_name, nameEn: s.service_name_en })),
+  };
+}
+
+const TX_SELECT = '*, customers(phone, name), transaction_services(service_name, service_name_en)';
 
 function validateInput(input: SubmitTransactionInput) {
   if (!input.phone.trim()) throw new Error('رقم الجوال مطلوب');
@@ -173,22 +200,6 @@ async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: Sub
   return serviceRows;
 }
 
-async function computeCommission(db: ReturnType<typeof supabaseAdmin>, input: SubmitTransactionInput, total: number) {
-  let commissionRate = 0;
-  let commissionAmount = 0;
-  let netAmount = total;
-  if (input.payMethod === 'بطاقة' && input.cardType) {
-    const { data: rate, error } = await db.from('card_commission_rates').select('*').eq('card_type', input.cardType).eq('is_current', true).maybeSingle();
-    if (error) throw new Error(error.message);
-    if (rate) {
-      commissionRate = rate.rate_percent;
-      commissionAmount = Math.round(total * commissionRate) / 100;
-      netAmount = Math.round((total - commissionAmount) * 100) / 100;
-    }
-  }
-  return { commissionRate, commissionAmount, netAmount };
-}
-
 export async function submitTransaction(input: SubmitTransactionInput): Promise<TransactionEntry> {
   validateInput(input);
   const db = supabaseAdmin();
@@ -196,7 +207,6 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
   const { customerId, vehicleId, vehicleDisplay } = await upsertCustomerAndVehicle(db, input);
   const serviceRows = await buildServiceRows(db, input);
   const total = serviceRows.reduce((s, r) => s + r.price, 0);
-  const { commissionRate, commissionAmount, netAmount } = await computeCommission(db, input, total);
 
   const { data: employee, error: empErr } = await db.from('employees').select('*').eq('id', input.employeeId).maybeSingle();
   if (empErr) throw new Error(empErr.message);
@@ -216,9 +226,10 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
       pay_status: input.payStatus,
       pay_method: input.payMethod,
       card_type: input.cardType,
-      commission_rate_snapshot: commissionRate,
-      commission_amount: commissionAmount,
-      net_amount: netAmount,
+      // العمولة ما تُخصم تلقائياً وقت التسجيل — يُسجَّل المبلغ الكامل، وتُكتشف العمولة الفعلية لاحقاً عبر تسوية رسالة البنك.
+      commission_rate_snapshot: 0,
+      commission_amount: 0,
+      net_amount: total,
       total,
       notes: input.notes.trim() || null,
     })
@@ -260,7 +271,6 @@ export async function updateTransaction(transactionId: string, input: SubmitTran
   const { customerId, vehicleId, vehicleDisplay } = await upsertCustomerAndVehicle(db, input);
   const serviceRows = await buildServiceRows(db, input);
   const total = serviceRows.reduce((s, r) => s + r.price, 0);
-  const { commissionRate, commissionAmount, netAmount } = await computeCommission(db, input, total);
 
   const { data: employee, error: empErr } = await db.from('employees').select('*').eq('id', input.employeeId).maybeSingle();
   if (empErr) throw new Error(empErr.message);
@@ -277,9 +287,9 @@ export async function updateTransaction(transactionId: string, input: SubmitTran
       pay_status: input.payStatus,
       pay_method: input.payMethod,
       card_type: input.cardType,
-      commission_rate_snapshot: commissionRate,
-      commission_amount: commissionAmount,
-      net_amount: netAmount,
+      commission_rate_snapshot: 0,
+      commission_amount: 0,
+      net_amount: total,
       total,
       notes: input.notes.trim() || null,
     })
@@ -363,29 +373,11 @@ export async function listToday(): Promise<TransactionEntry[]> {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from('transactions')
-    .select('*, customers(phone, name), transaction_services(service_name, service_name_en)')
+    .select(TX_SELECT)
     .eq('tx_date', todayDateStr())
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
-
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    date: row.tx_date,
-    time: String(row.tx_time).slice(0, 5),
-    customerName: row.customers?.name || 'عميلنا العزيز',
-    phone: row.customers?.phone || '',
-    plate: row.vehicle_plate_snapshot,
-    model: null,
-    employeeName: row.employee_name_snapshot,
-    payMethod: row.pay_method,
-    payStatus: row.pay_status,
-    cardType: row.card_type,
-    commissionAmount: Number(row.commission_amount),
-    netAmount: Number(row.net_amount),
-    total: Number(row.total),
-    notes: row.notes,
-    services: (row.transaction_services ?? []).map((s: any) => ({ name: s.service_name, nameEn: s.service_name_en })),
-  }));
+  return (data ?? []).map(mapTxRow);
 }
 
 export async function getTodaySummary(): Promise<TodaySummary> {
@@ -408,10 +400,7 @@ export async function searchStatement(query: string): Promise<TransactionEntry[]
   const db = supabaseAdmin();
   const q = query.trim();
 
-  let rowsQuery = db
-    .from('transactions')
-    .select('*, customers(phone, name), transaction_services(service_name, service_name_en)')
-    .order('created_at', { ascending: false });
+  let rowsQuery = db.from('transactions').select(TX_SELECT).order('created_at', { ascending: false });
 
   // نجلب دفعة معقولة ونفلتر بالجافاسكربت بدل الاعتماد على or() عبر جدول مرتبط (سلوكه غير موثوق بـ PostgREST).
   rowsQuery = q ? rowsQuery.limit(1000) : rowsQuery.eq('pay_status', 'pending').limit(500);
@@ -421,29 +410,48 @@ export async function searchStatement(query: string): Promise<TransactionEntry[]
 
   const rows = (data ?? []).filter((row: any) => {
     if (!q) return true;
-    const phoneMatch = (row.customers?.phone || '').includes(q);
-    const plateMatch = (row.vehicle_plate_snapshot || '').includes(q);
-    return phoneMatch || plateMatch;
+    return (row.customers?.phone || '').includes(q);
   });
 
-  return rows.map((row: any) => ({
-    id: row.id,
-    date: row.tx_date,
-    time: String(row.tx_time).slice(0, 5),
-    customerName: row.customers?.name || 'عميلنا العزيز',
-    phone: row.customers?.phone || '',
-    plate: row.vehicle_plate_snapshot,
-    model: null,
-    employeeName: row.employee_name_snapshot,
-    payMethod: row.pay_method,
-    payStatus: row.pay_status,
-    cardType: row.card_type,
-    commissionAmount: Number(row.commission_amount),
-    netAmount: Number(row.net_amount),
-    total: Number(row.total),
-    notes: row.notes,
-    services: (row.transaction_services ?? []).map((s: any) => ({ name: s.service_name, nameEn: s.service_name_en })),
-  }));
+  return rows.map(mapTxRow);
+}
+
+export interface PlateExactQuery {
+  plateEmirate: string;
+  plateCode: string;
+  plateNumber: string;
+  plateCountry: string;
+}
+
+// كشف حساب بمطابقة تامة على اللوحة (الإمارة + الرمز + الرقم كاملين) — يجيب كل تاريخ السيارة، وليس بحث جزئي بالنص.
+export async function searchStatementByPlate(query: PlateExactQuery): Promise<TransactionEntry[]> {
+  const db = supabaseAdmin();
+  const code = query.plateCode.trim();
+  const number = query.plateNumber.trim();
+  if (!number) return [];
+  const country = query.plateEmirate === 'other' ? query.plateCountry.trim() : '';
+
+  let vq = db
+    .from('vehicles')
+    .select('id')
+    .eq('plate_emirate', query.plateEmirate)
+    .eq('plate_code', code)
+    .eq('plate_number', number)
+    .eq('is_no_plate', false);
+  vq = country ? vq.eq('plate_country', country) : vq.is('plate_country', null);
+
+  const { data: vehicle, error: vErr } = await vq.maybeSingle();
+  if (vErr) throw new Error(vErr.message);
+  if (!vehicle) return [];
+
+  const { data, error } = await db
+    .from('transactions')
+    .select(TX_SELECT)
+    .eq('vehicle_id', vehicle.id)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map(mapTxRow);
 }
 
 export async function collectPayment(transactionId: string): Promise<void> {
@@ -455,15 +463,23 @@ export async function collectPayment(transactionId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function reconcileBank(bankNet: number): Promise<BankReconciliationResult> {
+async function getCardGrossForDate(db: ReturnType<typeof supabaseAdmin>, date: string): Promise<number> {
+  const { data, error } = await db
+    .from('transactions')
+    .select('total')
+    .eq('tx_date', date)
+    .eq('pay_status', 'paid')
+    .eq('pay_method', 'بطاقة');
+  if (error) throw new Error(error.message);
+  return (data ?? []).reduce((s: number, r: any) => s + Number(r.total), 0);
+}
+
+export async function reconcileBankForDate(date: string, bankNet: number): Promise<BankReconciliationResult> {
   const db = supabaseAdmin();
-  const entries = await listToday();
-  const cardGrossToday = entries
-    .filter((e) => e.payStatus === 'paid' && e.payMethod === 'بطاقة')
-    .reduce((s, e) => s + e.total, 0);
+  const cardGrossToday = await getCardGrossForDate(db, date);
 
   if (cardGrossToday === 0) {
-    throw new Error('لا توجد عمليات بطاقة اليوم بالنظام للمقارنة.');
+    throw new Error('لا توجد عمليات بطاقة بهذا التاريخ للمقارنة.');
   }
 
   const actualCommission = cardGrossToday - bankNet;
@@ -471,7 +487,7 @@ export async function reconcileBank(bankNet: number): Promise<BankReconciliation
 
   const { error } = await db.from('bank_reconciliation').upsert(
     {
-      tx_date: todayDateStr(),
+      tx_date: date,
       card_gross: cardGrossToday,
       bank_net: bankNet,
       actual_commission: actualCommission,
@@ -485,9 +501,9 @@ export async function reconcileBank(bankNet: number): Promise<BankReconciliation
   return { cardGrossToday, bankNet, actualCommission, actualRate };
 }
 
-export async function getTodayReconciliation(): Promise<BankReconciliationResult | null> {
+export async function getReconciliationForDate(date: string): Promise<BankReconciliationResult | null> {
   const db = supabaseAdmin();
-  const { data, error } = await db.from('bank_reconciliation').select('*').eq('tx_date', todayDateStr()).maybeSingle();
+  const { data, error } = await db.from('bank_reconciliation').select('*').eq('tx_date', date).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
   return {
