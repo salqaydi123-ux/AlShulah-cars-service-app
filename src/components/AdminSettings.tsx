@@ -126,6 +126,57 @@ function WashRow({ row }: { row: AdminConfigSnapshot['washOptions'][number] }) {
   );
 }
 
+function AddonRow({ row }: { row: AdminConfigSnapshot['addonServices'][number] }) {
+  const [name, setName] = useState(row.name);
+  const [nameEn, setNameEn] = useState(row.name_en || '');
+  const [price, setPrice] = useState(String(row.price));
+  const [isManualPrice, setIsManualPrice] = useState(row.is_manual_price);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await upsertAddonService({
+        code: row.code,
+        name,
+        nameEn,
+        price: parseFloat(price) || 0,
+        isManualPrice,
+        sortOrder: row.sort_order,
+      });
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="svc-row" style={{ flexWrap: 'wrap' }}>
+      <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: '1 1 100%', marginBottom: 6 }} />
+      <input
+        type="text"
+        dir="ltr"
+        placeholder="English name"
+        value={nameEn}
+        onChange={(e) => setNameEn(e.target.value)}
+        style={{ flex: '1 1 100%', marginBottom: 6 }}
+      />
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 6px', cursor: 'pointer', flex: '1 1 100%' }}>
+        <input type="checkbox" style={{ width: 16, height: 16 }} checked={isManualPrice} onChange={(e) => setIsManualPrice(e.target.checked)} />
+        <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>سعر يدوي (يُدخل بكل عملية) بدل السعر الثابت أدناه</span>
+      </label>
+      <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center', opacity: isManualPrice ? 0.5 : 1 }}>
+        <label style={{ margin: 0, whiteSpace: 'nowrap' }}>السعر</label>
+        <input type="number" className="svc-price" value={price} disabled={isManualPrice} onChange={(e) => setPrice(e.target.value)} />
+        <button className="btn-lookup" disabled={saving} onClick={save} style={{ opacity: 1 }}>{saving ? '...' : 'حفظ'}</button>
+      </div>
+      <SavedTick show={saved} />
+    </div>
+  );
+}
+
 function PriceRow({
   name: initialName,
   nameEn: initialNameEn,
@@ -321,19 +372,9 @@ export default function AdminSettings({ config }: { config: AdminConfigSnapshot 
         </div>
 
         <div className="card">
-          <h2><span className="dot" /> إضافات الغسيل (سعر ثابت)</h2>
+          <h2><span className="dot" /> إضافات الغسيل</h2>
           <div className="services">
-            {config.addonServices.map((a) => (
-              <PriceRow
-                key={a.id}
-                name={a.name}
-                nameEn={a.name_en || ''}
-                price={String(a.price)}
-                onSave={async (name, nameEn, price) => {
-                  await upsertAddonService({ code: a.code, name, nameEn, price: parseFloat(price) || 0, sortOrder: a.sort_order });
-                }}
-              />
-            ))}
+            {config.addonServices.map((a) => <AddonRow key={a.id} row={a} />)}
           </div>
         </div>
 

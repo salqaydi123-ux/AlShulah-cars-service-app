@@ -21,6 +21,7 @@ export interface AddonService {
   name: string;
   name_en: string | null;
   price: number;
+  is_manual_price: boolean;
   sort_order: number;
 }
 
@@ -96,6 +97,7 @@ export interface SubmitTransactionInput {
   washCode: string | null; // code من WASH_OPTIONS أو null لو "بدون غسيل أساسي"
   washManualPrice: number; // يُستخدم فقط إذا كان نوع الغسيل المختار is_manual_price
   addonCodes: string[];
+  addonManualPrices: { code: string; price: number }[]; // يُستخدم فقط للإضافات المفعّل لها is_manual_price
   manualEntries: { code: string; price: number }[];
   payMethod: PayMethod;
   payStatus: PayStatus;

@@ -182,7 +182,13 @@ async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: Sub
     const { data: addons, error } = await db.from('addon_services').select('*').in('code', input.addonCodes).eq('is_current', true);
     if (error) throw new Error(error.message);
     for (const a of addons ?? []) {
-      serviceRows.push({ service_group: 'addon', service_code: a.code, service_name: a.name, service_name_en: a.name_en, price: a.price });
+      let price = a.price;
+      if (a.is_manual_price) {
+        const entry = input.addonManualPrices.find((m) => m.code === a.code);
+        if (!entry || entry.price <= 0) throw new Error(`أدخل سعر ${a.name}`);
+        price = entry.price;
+      }
+      serviceRows.push({ service_group: 'addon', service_code: a.code, service_name: a.name, service_name_en: a.name_en, price });
     }
   }
 
@@ -343,7 +349,8 @@ export async function getTransactionDetail(transactionId: string): Promise<Trans
   const vehicle = tx.vehicles;
   const services: { service_group: string; service_code: string; price: number }[] = tx.transaction_services ?? [];
   const washRow = services.find((s) => s.service_group === 'wash');
-  const addonCodes = services.filter((s) => s.service_group === 'addon').map((s) => s.service_code);
+  const addonEntries = services.filter((s) => s.service_group === 'addon').map((s) => ({ code: s.service_code, price: Number(s.price) }));
+  const addonCodes = addonEntries.map((e) => e.code);
   const manualEntries = services.filter((s) => s.service_group === 'manual').map((s) => ({ code: s.service_code, price: Number(s.price) }));
 
   return {
@@ -360,6 +367,7 @@ export async function getTransactionDetail(transactionId: string): Promise<Trans
     washCode: washRow ? washRow.service_code : null,
     washManualPrice: washRow ? Number(washRow.price) : 0,
     addonCodes,
+    addonManualPrices: addonEntries,
     manualEntries,
     payMethod: tx.pay_method,
     payStatus: tx.pay_status,

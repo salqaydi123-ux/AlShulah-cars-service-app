@@ -63,6 +63,7 @@ const DICT: Record<string, string> = {
   'نوع الغسيل (السعر يظهر تلقائياً حسب نوع الهيكل)': 'Wash Type (price shows automatically by body type)',
   'بدون غسيل أساسي': 'No basic wash',
   'أدخل سعر الغسيل الأساسي': 'Enter the basic wash price',
+  'أدخل سعر الإضافة المحددة': 'Enter the price for the selected add-on',
   'إضافات الغسيل (اختياري)': 'Wash Add-ons (optional)',
   'سعر ثابت': 'Fixed price',
 

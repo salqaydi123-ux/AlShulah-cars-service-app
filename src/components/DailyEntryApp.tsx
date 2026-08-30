@@ -123,6 +123,7 @@ export default function DailyEntryApp({
   const [washCode, setWashCode] = useState<string>('none');
   const [washManualPrice, setWashManualPrice] = useState<number>(0);
   const [addonChecked, setAddonChecked] = useState<Set<string>>(new Set());
+  const [addonPrices, setAddonPrices] = useState<Record<string, number>>({});
   const [manualChecked, setManualChecked] = useState<Set<string>>(new Set());
   const [manualPrices, setManualPrices] = useState<Record<string, number>>(emptyManualPrices);
 
@@ -166,13 +167,13 @@ export default function DailyEntryApp({
     let sum = washPrice;
     for (const code of addonChecked) {
       const a = config.addonServices.find((x) => x.code === code);
-      if (a) sum += a.price;
+      if (a) sum += a.is_manual_price ? addonPrices[code] || 0 : a.price;
     }
     for (const code of manualChecked) {
       sum += manualPrices[code] || 0;
     }
     return sum;
-  }, [washPrice, addonChecked, manualChecked, manualPrices, config]);
+  }, [washPrice, addonChecked, addonPrices, manualChecked, manualPrices, config]);
 
   function resetSearchFields() {
     setSearchMode((m) => m);
@@ -323,6 +324,7 @@ export default function DailyEntryApp({
     setWashCode('none');
     setWashManualPrice(0);
     setAddonChecked(new Set());
+    setAddonPrices({});
     setManualChecked(new Set());
     setManualPrices({});
     setPay('نقدي', 'paid');
@@ -351,6 +353,7 @@ export default function DailyEntryApp({
       setWashCode(detail.washCode || 'none');
       setWashManualPrice(detail.washManualPrice || 0);
       setAddonChecked(new Set(detail.addonCodes));
+      setAddonPrices(Object.fromEntries(detail.addonManualPrices.map((m) => [m.code, m.price])));
       setManualChecked(new Set(detail.manualEntries.map((m) => m.code)));
       setManualPrices(Object.fromEntries(detail.manualEntries.map((m) => [m.code, m.price])));
       setPay(detail.payMethod, detail.payStatus);
@@ -393,6 +396,14 @@ export default function DailyEntryApp({
       setFormError(tr('أدخل سعر الغسيل الأساسي'));
       return;
     }
+    const missingAddonPrice = Array.from(addonChecked).find((code) => {
+      const a = config.addonServices.find((x) => x.code === code);
+      return a?.is_manual_price && !(addonPrices[code] > 0);
+    });
+    if (missingAddonPrice) {
+      setFormError(tr('أدخل سعر الإضافة المحددة'));
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -409,6 +420,7 @@ export default function DailyEntryApp({
         washCode: washCode !== 'none' ? washCode : null,
         washManualPrice,
         addonCodes: Array.from(addonChecked),
+        addonManualPrices: Array.from(addonChecked).map((code) => ({ code, price: addonPrices[code] || 0 })),
         manualEntries: Array.from(manualChecked).map((code) => ({ code, price: manualPrices[code] || 0 })),
         payMethod,
         payStatus,
@@ -681,8 +693,17 @@ export default function DailyEntryApp({
               {config.addonServices.map((a) => (
                 <div key={a.code} className={`svc-row${addonChecked.has(a.code) ? ' active' : ''}`}>
                   <input type="checkbox" checked={addonChecked.has(a.code)} onChange={() => toggleAddon(a.code)} />
-                  <div className="svc-name">{catalogLabel(a, lang)}<span className="svc-tag">{tr('سعر ثابت')}</span></div>
-                  <input type="number" className="svc-price" value={a.price} readOnly />
+                  <div className="svc-name">{catalogLabel(a, lang)}<span className="svc-tag">{a.is_manual_price ? tr('يُدخل يدوياً') : tr('سعر ثابت')}</span></div>
+                  {a.is_manual_price ? (
+                    <input
+                      type="number"
+                      className="svc-price"
+                      value={addonPrices[a.code] ?? 0}
+                      onChange={(e) => setAddonPrices((prev) => ({ ...prev, [a.code]: parseFloat(e.target.value) || 0 }))}
+                    />
+                  ) : (
+                    <input type="number" className="svc-price" value={a.price} readOnly />
+                  )}
                 </div>
               ))}
             </div>
