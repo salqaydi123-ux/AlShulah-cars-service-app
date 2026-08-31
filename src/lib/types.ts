@@ -58,6 +58,19 @@ export interface FormConfig {
   employees: Employee[];
 }
 
+export interface ExpenseAccountOption {
+  account_code: string;
+  account_name_ar: string;
+}
+
+export interface PayrollMonthRow {
+  worker_id: string;
+  full_name: string;
+  compensation_type: string;
+  amount_due: number;
+  already_posted: boolean;
+}
+
 export interface VehicleRecord {
   id: string;
   customer_id: string | null;
