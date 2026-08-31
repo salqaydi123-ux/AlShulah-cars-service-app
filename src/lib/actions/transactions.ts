@@ -56,6 +56,44 @@ function mapTxRow(row: any): TransactionEntry {
 
 const TX_SELECT = '*, customers(phone, name), transaction_services(service_name, service_name_en)';
 
+// تصنيف كل سطر خدمة لحساب الإيراد المناسب بدفتر المحاسبة (0006_financial_accounting_schema.sql):
+// wash -> 40100، polish اليدوي -> 40200 (تلميع/تفصيل)، الباقي (إضافات + خدمات يدوية أخرى) -> 40300.
+function ledgerServiceType(group: 'wash' | 'addon' | 'manual', code: string): 'wash' | 'detailing' | 'other' {
+  if (group === 'wash') return 'wash';
+  if (group === 'manual' && code === 'polish') return 'detailing';
+  return 'other';
+}
+
+function ledgerPaymentMethod(payMethod: string): 'cash' | 'card' | 'other' {
+  if (payMethod === 'نقدي') return 'cash';
+  if (payMethod === 'بطاقة') return 'card';
+  return 'other';
+}
+
+// يكتب سطر بـdaily_service_entries لكل خدمة بالعملية — الـ trigger الموجود بقاعدة البيانات
+// (trg_post_daily_entry) يحوّلها تلقائياً لقيد بدفتر accounting_transactions، بدون إدخال يدوي مزدوج.
+// ملاحظة: staff_id يبقى فاضي عمداً — جدول employees (التطبيق اليومي) منفصل تماماً عن جدول
+// workers (النظام المالي)، ما فيه ربط موثوق بين الاثنين حالياً.
+async function postToAccountingLedger(
+  db: ReturnType<typeof supabaseAdmin>,
+  tx: { id: string; tx_date: string; tx_time: string; pay_method: string; vehicle_plate_snapshot: string },
+  serviceRows: { service_group: 'wash' | 'addon' | 'manual'; service_code: string; service_name: string; price: number }[]
+) {
+  const rows = serviceRows
+    .filter((r) => r.price > 0)
+    .map((r) => ({
+      entry_date: tx.tx_date,
+      entry_time: tx.tx_time,
+      service_type: ledgerServiceType(r.service_group, r.service_code),
+      amount: r.price,
+      payment_method: ledgerPaymentMethod(tx.pay_method),
+      notes: `${r.service_name} — ${tx.vehicle_plate_snapshot} — عملية #${tx.id}`,
+    }));
+  if (rows.length === 0) return;
+  const { error } = await db.from('daily_service_entries').insert(rows);
+  if (error) throw new Error(error.message);
+}
+
 function validateInput(input: SubmitTransactionInput) {
   if (!input.phone.trim()) throw new Error('رقم الجوال مطلوب');
   if (!input.isNoPlate && !input.plateNumber.trim()) throw new Error('رقم اللوحة مطلوب');
@@ -245,6 +283,8 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
 
   const { error: svcErr } = await db.from('transaction_services').insert(serviceRows.map((r) => ({ transaction_id: tx.id, ...r })));
   if (svcErr) throw new Error(svcErr.message);
+
+  await postToAccountingLedger(db, tx, serviceRows);
 
   return {
     id: tx.id,
