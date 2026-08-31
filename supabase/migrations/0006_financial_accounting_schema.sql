@@ -756,3 +756,16 @@ create trigger trg_post_daily_entry
 
 -- استخدام المنظومة الأكبر: select * from shulah_monthly_profit_export order by month desc limit 1;
 -- ============================================================
+
+-- ------------------------------------------------------------
+-- أمان: نفس مبدأ 0001_init.sql — كل الجداول محمية بـ RLS بدون أي
+-- policy عامة، فالوصول الوحيد الممكن هو عبر مفتاح service_role من
+-- كود الخادم (لا يصل أبداً لمتصفح المستخدم). ضروري هنا خصوصاً —
+-- الجداول تحتوي رواتب العمال وأرقام جوازاتهم.
+-- ------------------------------------------------------------
+alter table entities enable row level security;
+alter table chart_of_accounts enable row level security;
+alter table workers enable row level security;
+alter table worker_leaves enable row level security;
+alter table accounting_transactions enable row level security;
+alter table daily_service_entries enable row level security;
