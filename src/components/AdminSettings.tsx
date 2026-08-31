@@ -353,6 +353,7 @@ export default function AdminSettings({ config }: { config: AdminConfigSnapshot 
           </div>
         </div>
         <div className="date-line">
+          <a href="/admin/finance" className="back-link" style={{ color: '#fff', marginInlineEnd: 12 }}>الشؤون المالية →</a>
           <a href="/" className="back-link" style={{ color: '#fff' }}>← الرجوع لسجل التشغيل</a>
         </div>
       </header>
