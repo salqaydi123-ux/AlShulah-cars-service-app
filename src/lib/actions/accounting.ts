@@ -80,12 +80,21 @@ export async function submitExpense(input: SubmitExpenseInput): Promise<void> {
 // شهر قديم فيه قيد راتب مسبق أصلاً، فيتفادى ازدواج التسجيل.
 const PAYROLL_MIN_MONTH = '2026-09-01';
 
+// شهر لسا ما خلص = بياناته غير مكتملة (revenue_share/profit_share تُحسب على إيراد جزئي فقط)،
+// والراتب الثابت يطلع كامل رغم مرور يوم أو يومين بس (لأن التناسب مبني على أيام الإجازة، مو على
+// كم يوم مر فعلياً من الشهر) — لازم ننتظر الشهر يخلص كامل قبل ما نعرضه بفورم الرواتب.
+function currentMonthStart(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
 export async function getPayrollMonths(): Promise<string[]> {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from('worker_payroll_monthly')
     .select('month')
     .gte('month', PAYROLL_MIN_MONTH)
+    .lt('month', currentMonthStart())
     .order('month', { ascending: false });
   if (error) throw new Error(error.message);
   const months = new Set<string>((data ?? []).map((r: any) => String(r.month).slice(0, 10)));
@@ -109,6 +118,7 @@ async function alreadyPostedWorkerIds(db: ReturnType<typeof supabaseAdmin>, mont
 
 export async function getPayrollForMonth(month: string): Promise<PayrollMonthRow[]> {
   if (month < PAYROLL_MIN_MONTH) throw new Error('هذا الشهر غير متاح لفورم الرواتب — راجع الملاحظة بالأعلى');
+  if (month >= currentMonthStart()) throw new Error('هذا الشهر لسا ما خلص — الأرقام تبقى غير مكتملة لحد نهاية الشهر');
 
   const db = supabaseAdmin();
   const { data, error } = await db
@@ -138,6 +148,7 @@ export interface SubmitPayrollResult {
 
 export async function submitPayroll(month: string, workerIds: string[]): Promise<SubmitPayrollResult> {
   if (month < PAYROLL_MIN_MONTH) throw new Error('هذا الشهر غير متاح لفورم الرواتب — راجع الملاحظة بالأعلى');
+  if (month >= currentMonthStart()) throw new Error('هذا الشهر لسا ما خلص — الأرقام تبقى غير مكتملة لحد نهاية الشهر');
   if (workerIds.length === 0) return { postedCount: 0, skippedCount: 0 };
 
   const db = supabaseAdmin();

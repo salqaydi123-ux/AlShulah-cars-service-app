@@ -141,7 +141,7 @@ function PayrollForm({ months }: { months: string[] }) {
     return (
       <div className="card">
         <h2><span className="dot" /> رواتب</h2>
-        <div className="note">ما فيه بيانات شهر بعد — بعد أول عملية يومية تُسجَّل، الشهر بيظهر هنا تلقائياً.</div>
+        <div className="note">ما فيه شهر منتهي بعد — الشهر يظهر هنا بعد ما يخلص كامل (أرقام الرواتب تبقى غير مكتملة قبل ذلك).</div>
       </div>
     );
   }
