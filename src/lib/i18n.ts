@@ -1,5 +1,9 @@
 export type Lang = 'ar' | 'en';
 
+// مفتاح مشترك بكل الصفحات (الرئيسية + /admin/finance) — يضمن اختيار اللغة بصفحة التشغيل
+// الرئيسية ينعكس تلقائياً عند الدخول لصفحة الشؤون المالية، بدون أي مزامنة إضافية.
+export const LANG_STORAGE_KEY = 'alshulah_lang';
+
 export const EMIRATES_EN: Record<string, string> = {
   'الشارقة': 'Sharjah',
   'دبي': 'Dubai',
@@ -28,6 +32,27 @@ export const PAY_STATUS_LABEL_BY_LANG: Record<Lang, Record<string, string>> = {
 export const PAY_METHOD_LABEL_BY_LANG: Record<Lang, Record<string, string>> = {
   ar: { 'نقدي': 'نقدي (الآن)', 'بطاقة': 'بطاقة (الآن)', 'آجل': 'آجل (لحين السداد)', 'محصّل لاحقاً': 'محصّل لاحقاً' },
   en: { 'نقدي': 'Cash (Now)', 'بطاقة': 'Card (Now)', 'آجل': 'Deferred (Pending)', 'محصّل لاحقاً': 'Collected Later' },
+};
+
+// نفس طرق الدفع، بدون لاحقة "(الآن)"/"(لحين السداد)" الخاصة بفورم التسجيل — تُستخدم بعرض عمليات سابقة (التقرير المالي).
+export const PAY_METHOD_PLAIN_LABEL_BY_LANG: Record<Lang, Record<string, string>> = {
+  ar: { 'نقدي': 'نقدي', 'بطاقة': 'بطاقة', 'آجل': 'آجل', 'محصّل لاحقاً': 'محصّل لاحقاً' },
+  en: { 'نقدي': 'Cash', 'بطاقة': 'Card', 'آجل': 'Deferred', 'محصّل لاحقاً': 'Collected Later' },
+};
+
+export const COMPENSATION_LABEL_BY_LANG: Record<Lang, Record<string, string>> = {
+  ar: { fixed: 'راتب ثابت', revenue_share: 'نسبة من الدخل', fixed_plus_profit_share: 'ثابت + نسبة أرباح' },
+  en: { fixed: 'Fixed salary', revenue_share: 'Revenue share', fixed_plus_profit_share: 'Fixed + profit share' },
+};
+
+export const ACCOUNT_TYPE_LABEL_BY_LANG: Record<Lang, Record<string, string>> = {
+  ar: { revenue: 'إيراد', expense: 'مصروف' },
+  en: { revenue: 'Revenue', expense: 'Expense' },
+};
+
+export const REPORT_PRESET_LABEL_BY_LANG: Record<Lang, Record<'yesterday' | 'last7' | 'thisMonth' | 'lastMonth', string>> = {
+  ar: { yesterday: 'أمس', last7: 'آخر 7 أيام', thisMonth: 'هذا الشهر', lastMonth: 'الشهر الماضي' },
+  en: { yesterday: 'Yesterday', last7: 'Last 7 days', thisMonth: 'This month', lastMonth: 'Last month' },
 };
 
 // نص عربي (مصدر الحقيقة الافتراضي) -> ترجمة إنجليزية. أي نص جديد بالواجهة يُضاف هنا.
@@ -128,6 +153,50 @@ const DICT: Record<string, string> = {
   'كلمة المرور': 'Password',
   'دخول': 'Login',
   'كلمة المرور غير صحيحة': 'Incorrect password',
+
+  // /admin/finance
+  'الشؤون المالية': 'Finance',
+  'مصاريف شهرية ورواتب': 'Monthly expenses & payroll',
+  '← الرجوع للإعدادات': '← Back to Settings',
+  'كل قيد هنا يُسجَّل مباشرة بدفتر المحاسبة (accounting_transactions). فورم الرواتب يمنع تسجيل نفس العامل مرتين لنفس الشهر تلقائياً.':
+    'Every entry here posts directly to the accounting ledger (accounting_transactions). The payroll form automatically prevents posting the same worker twice for the same month.',
+  '✓ تم الحفظ': '✓ Saved',
+
+  'مصاريف شهرية': 'Monthly expenses',
+  'المبلغ': 'Amount',
+  'حفظ المصروف': 'Save expense',
+  'تعذّر الحفظ': 'Could not save',
+
+  'رواتب': 'Payroll',
+  'ما فيه شهر منتهي بعد — الشهر يظهر هنا بعد ما يخلص كامل (أرقام الرواتب تبقى غير مكتملة قبل ذلك).':
+    'No completed month yet — a month appears here once it has fully ended (payroll figures stay incomplete before that).',
+  'جاري التحميل...': 'Loading...',
+  '✓ مدفوع': '✓ Paid',
+  'تعذّر التحميل': 'Could not load',
+  'تأكيد وحفظ': 'Confirm & save',
+
+  'تقرير مالي': 'Financial report',
+  'تعذّر تحميل التقرير': 'Could not load the report',
+  'عرض الفترة المحددة': 'Show selected period',
+  'إجمالي الإيرادات': 'Total revenue',
+  'إجمالي المصاريف': 'Total expenses',
+  'صافي الربح': 'Net profit',
+  'ما فيه أي عملية بهذي الفترة.': 'No entries in this period.',
+  'تفاصيل عمليات اليوم (اللوحة/الخدمات/المبلغ)': "Day's entries (plate/services/amount)",
+  'ما فيه عمليات تسجيل يومي بهذا التاريخ.': 'No daily entries for this date.',
+  '⬇️ تحميل Excel (CSV)': '⬇️ Download Excel (CSV)',
+
+  // CSV export headers
+  'الفترة': 'Period',
+  'رقم الحساب': 'Account code',
+  'اسم الحساب': 'Account name',
+  'النوع': 'Type',
+  'الوقت': 'Time',
+  'اللوحة': 'Plate',
+  'العميل': 'Customer',
+  'الخدمات': 'Services',
+  'الموظف': 'Employee',
+  'طريقة الدفع': 'Payment method',
 };
 
 export function t(text: string, lang: Lang): string {

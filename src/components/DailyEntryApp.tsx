@@ -17,6 +17,7 @@ import {
 import { EMIRATES } from '@/lib/constants';
 import {
   BODY_LABEL_BY_LANG,
+  LANG_STORAGE_KEY,
   PAY_METHOD_LABEL_BY_LANG,
   PAY_STATUS_LABEL_BY_LANG,
   emirateLabel,
@@ -34,8 +35,6 @@ import type {
   TransactionEntry,
   VehicleRecord,
 } from '@/lib/types';
-
-const LANG_STORAGE_KEY = 'alshulah_lang';
 
 function fmtDate(lang: Lang): string {
   return new Date().toLocaleDateString(lang === 'ar' ? 'ar-AE' : 'en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });

@@ -3,28 +3,31 @@
 import { useEffect, useState } from 'react';
 import { getFinancialReport, getPayrollForMonth, submitExpense, submitPayroll } from '@/lib/actions/accounting';
 import { listByDate } from '@/lib/actions/transactions';
+import {
+  ACCOUNT_TYPE_LABEL_BY_LANG,
+  COMPENSATION_LABEL_BY_LANG,
+  LANG_STORAGE_KEY,
+  PAY_METHOD_PLAIN_LABEL_BY_LANG,
+  REPORT_PRESET_LABEL_BY_LANG,
+  t,
+  type Lang,
+} from '@/lib/i18n';
 import type { ExpenseAccountOption, FinancialReport, PayrollMonthRow, TransactionEntry } from '@/lib/types';
 
-function arabicMonthLabel(monthStart: string): string {
-  return new Date(`${monthStart}T00:00:00Z`).toLocaleDateString('ar-AE', {
+function monthLabel(monthStart: string, lang: Lang): string {
+  return new Date(`${monthStart}T00:00:00Z`).toLocaleDateString(lang === 'ar' ? 'ar-AE' : 'en-GB', {
     year: 'numeric',
     month: 'long',
     timeZone: 'UTC',
   });
 }
 
-const COMPENSATION_LABELS: Record<string, string> = {
-  fixed: 'راتب ثابت',
-  revenue_share: 'نسبة من الدخل',
-  fixed_plus_profit_share: 'ثابت + نسبة أرباح',
-};
-
-function SavedTick({ show }: { show: boolean }) {
+function SavedTick({ show, lang }: { show: boolean; lang: Lang }) {
   if (!show) return null;
-  return <span className="save-msg">✓ تم الحفظ</span>;
+  return <span className="save-msg">{t('✓ تم الحفظ', lang)}</span>;
 }
 
-function ExpenseForm({ accounts, months }: { accounts: ExpenseAccountOption[]; months: string[] }) {
+function ExpenseForm({ accounts, months, lang }: { accounts: ExpenseAccountOption[]; months: string[]; lang: Lang }) {
   const [accountCode, setAccountCode] = useState(accounts[0]?.account_code || '');
   const [amount, setAmount] = useState('');
   const [month, setMonth] = useState(months[0] || '');
@@ -41,7 +44,7 @@ function ExpenseForm({ accounts, months }: { accounts: ExpenseAccountOption[]; m
       setSaved(true);
       setAmount('');
     } catch (err: any) {
-      setError(err?.message || 'تعذّر الحفظ');
+      setError(err?.message || t('تعذّر الحفظ', lang));
     } finally {
       setSaving(false);
     }
@@ -49,19 +52,19 @@ function ExpenseForm({ accounts, months }: { accounts: ExpenseAccountOption[]; m
 
   return (
     <div className="card">
-      <h2><span className="dot" /> مصاريف شهرية</h2>
+      <h2><span className="dot" /> {t('مصاريف شهرية', lang)}</h2>
       <div className="services">
         <div className="svc-row" style={{ flexWrap: 'wrap' }}>
           <select value={accountCode} onChange={(e) => setAccountCode(e.target.value)} style={{ flex: '1 1 100%', marginBottom: 6 }}>
             {accounts.map((a) => (
               <option key={a.account_code} value={a.account_code}>
-                {a.account_name_ar}
+                {lang === 'en' && a.account_name_en ? a.account_name_en : a.account_name_ar}
               </option>
             ))}
           </select>
           <input
             type="number"
-            placeholder="المبلغ"
+            placeholder={t('المبلغ', lang)}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             style={{ flex: '1 1 100%', marginBottom: 6 }}
@@ -69,22 +72,22 @@ function ExpenseForm({ accounts, months }: { accounts: ExpenseAccountOption[]; m
           <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ flex: '1 1 100%', marginBottom: 6 }}>
             {months.map((m) => (
               <option key={m} value={m}>
-                {arabicMonthLabel(m)}
+                {monthLabel(m, lang)}
               </option>
             ))}
           </select>
           <button className="btn-lookup" disabled={saving || !accountCode || !month} onClick={save} style={{ width: '100%' }}>
-            {saving ? '...' : 'حفظ المصروف'}
+            {saving ? '...' : t('حفظ المصروف', lang)}
           </button>
         </div>
-        <SavedTick show={saved} />
+        <SavedTick show={saved} lang={lang} />
         {error && <div className="lookup-msg show error" style={{ marginTop: 8 }}>{error}</div>}
       </div>
     </div>
   );
 }
 
-function PayrollForm({ months }: { months: string[] }) {
+function PayrollForm({ months, lang }: { months: string[]; lang: Lang }) {
   const [month, setMonth] = useState(months[0] || '');
   const [rows, setRows] = useState<PayrollMonthRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -105,7 +108,7 @@ function PayrollForm({ months }: { months: string[] }) {
         setRows(data);
         setSelected(new Set(data.filter((r) => !r.already_posted && r.amount_due > 0).map((r) => r.worker_id)));
       })
-      .catch((err) => !cancelled && setError(err?.message || 'تعذّر التحميل'))
+      .catch((err) => !cancelled && setError(err?.message || t('تعذّر التحميل', lang)))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -127,12 +130,18 @@ function PayrollForm({ months }: { months: string[] }) {
     setResult(null);
     try {
       const res = await submitPayroll(month, Array.from(selected));
-      setResult(`✓ تم حفظ ${res.postedCount} راتب${res.skippedCount > 0 ? ` — تجاوز ${res.skippedCount} (مدفوع مسبقاً أو بدون مستحق)` : ''}`);
+      const skippedNote =
+        res.skippedCount > 0
+          ? lang === 'en'
+            ? ` — skipped ${res.skippedCount} (already paid or nothing due)`
+            : ` — تجاوز ${res.skippedCount} (مدفوع مسبقاً أو بدون مستحق)`
+          : '';
+      setResult((lang === 'en' ? `✓ Saved ${res.postedCount} payroll entries` : `✓ تم حفظ ${res.postedCount} راتب`) + skippedNote);
       const data = await getPayrollForMonth(month);
       setRows(data);
       setSelected(new Set(data.filter((r) => !r.already_posted && r.amount_due > 0).map((r) => r.worker_id)));
     } catch (err: any) {
-      setError(err?.message || 'تعذّر الحفظ');
+      setError(err?.message || t('تعذّر الحفظ', lang));
     } finally {
       setSaving(false);
     }
@@ -141,8 +150,8 @@ function PayrollForm({ months }: { months: string[] }) {
   if (months.length === 0) {
     return (
       <div className="card">
-        <h2><span className="dot" /> رواتب</h2>
-        <div className="note">ما فيه شهر منتهي بعد — الشهر يظهر هنا بعد ما يخلص كامل (أرقام الرواتب تبقى غير مكتملة قبل ذلك).</div>
+        <h2><span className="dot" /> {t('رواتب', lang)}</h2>
+        <div className="note">{t('ما فيه شهر منتهي بعد — الشهر يظهر هنا بعد ما يخلص كامل (أرقام الرواتب تبقى غير مكتملة قبل ذلك).', lang)}</div>
       </div>
     );
   }
@@ -151,17 +160,17 @@ function PayrollForm({ months }: { months: string[] }) {
 
   return (
     <div className="card">
-      <h2><span className="dot" /> رواتب</h2>
+      <h2><span className="dot" /> {t('رواتب', lang)}</h2>
       <div className="services">
         <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: '100%', marginBottom: 10 }}>
           {months.map((m) => (
             <option key={m} value={m}>
-              {arabicMonthLabel(m)}
+              {monthLabel(m, lang)}
             </option>
           ))}
         </select>
 
-        {loading && <div className="note">جاري التحميل...</div>}
+        {loading && <div className="note">{t('جاري التحميل...', lang)}</div>}
 
         {!loading &&
           rows.map((r) => (
@@ -176,18 +185,20 @@ function PayrollForm({ months }: { months: string[] }) {
                 />
                 <span>
                   {r.full_name}
-                  <span style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block' }}>{COMPENSATION_LABELS[r.compensation_type] || r.compensation_type}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block' }}>
+                    {COMPENSATION_LABEL_BY_LANG[lang][r.compensation_type] || r.compensation_type}
+                  </span>
                 </span>
               </label>
               <span style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
-                {r.already_posted ? '✓ مدفوع' : `AED ${r.amount_due.toFixed(2)}`}
+                {r.already_posted ? t('✓ مدفوع', lang) : `AED ${r.amount_due.toFixed(2)}`}
               </span>
             </div>
           ))}
 
         {!loading && rows.length > 0 && (
           <button className="btn-lookup" disabled={saving || selectableCount === 0} onClick={confirmAndSave} style={{ width: '100%', marginTop: 10 }}>
-            {saving ? '...' : `تأكيد وحفظ (${selected.size})`}
+            {saving ? '...' : `${t('تأكيد وحفظ', lang)} (${selected.size})`}
           </button>
         )}
         {result && <div className="save-msg" style={{ display: 'block', marginTop: 8 }}>{result}</div>}
@@ -199,26 +210,39 @@ function PayrollForm({ months }: { months: string[] }) {
 
 // نفس أسلوب تصدير CSV المستخدم بتصدير العملاء (AdminSettings.tsx) — BOM حتى يفتح صح بإكسل مع النص العربي.
 // dayDetails تُضاف فقط لما الفترة يوم واحد (نفس شرط عرضها بالشاشة).
-function downloadReportCsv(report: FinancialReport, dayDetails: TransactionEntry[] | null) {
+function downloadReportCsv(report: FinancialReport, dayDetails: TransactionEntry[] | null, lang: Lang) {
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const lines = [
-    ['الفترة', `من ${report.from} إلى ${report.to}`].map(escape).join(','),
-    ['إجمالي الإيرادات', report.totalRevenue.toFixed(2)].map(escape).join(','),
-    ['إجمالي المصاريف', report.totalExpense.toFixed(2)].map(escape).join(','),
-    ['صافي الربح', report.netProfit.toFixed(2)].map(escape).join(','),
+    [t('الفترة', lang), `${lang === 'en' ? 'From' : 'من'} ${report.from} ${lang === 'en' ? 'to' : 'إلى'} ${report.to}`].map(escape).join(','),
+    [t('إجمالي الإيرادات', lang), report.totalRevenue.toFixed(2)].map(escape).join(','),
+    [t('إجمالي المصاريف', lang), report.totalExpense.toFixed(2)].map(escape).join(','),
+    [t('صافي الربح', lang), report.netProfit.toFixed(2)].map(escape).join(','),
     '',
-    ['رقم الحساب', 'اسم الحساب', 'النوع', 'المبلغ'].map(escape).join(','),
+    [t('رقم الحساب', lang), t('اسم الحساب', lang), t('النوع', lang), t('المبلغ', lang)].map(escape).join(','),
   ];
   for (const r of report.rows) {
-    lines.push([r.account_code, r.account_name_ar, ACCOUNT_TYPE_LABELS[r.account_type] || r.account_type, r.total.toFixed(2)].map(escape).join(','));
+    const name = lang === 'en' && r.account_name_en ? r.account_name_en : r.account_name_ar;
+    lines.push([r.account_code, name, ACCOUNT_TYPE_LABEL_BY_LANG[lang][r.account_type] || r.account_type, r.total.toFixed(2)].map(escape).join(','));
   }
 
   if (report.from === report.to && dayDetails && dayDetails.length > 0) {
     lines.push('');
-    lines.push(['الوقت', 'اللوحة', 'العميل', 'الخدمات', 'الموظف', 'طريقة الدفع', 'المبلغ'].map(escape).join(','));
-    for (const t of dayDetails) {
+    lines.push(
+      [t('الوقت', lang), t('اللوحة', lang), t('العميل', lang), t('الخدمات', lang), t('الموظف', lang), t('طريقة الدفع', lang), t('المبلغ', lang)]
+        .map(escape)
+        .join(',')
+    );
+    for (const entry of dayDetails) {
       lines.push(
-        [t.time, t.plate, t.customerName, t.services.map((s) => s.name).join('، '), t.employeeName, t.payMethod, t.total.toFixed(2)]
+        [
+          entry.time,
+          entry.plate,
+          entry.customerName,
+          entry.services.map((s) => (lang === 'en' && s.nameEn ? s.nameEn : s.name)).join(lang === 'en' ? ', ' : '، '),
+          entry.employeeName,
+          PAY_METHOD_PLAIN_LABEL_BY_LANG[lang][entry.payMethod] || entry.payMethod,
+          entry.total.toFixed(2),
+        ]
           .map(escape)
           .join(',')
       );
@@ -247,11 +271,13 @@ function addDays(d: Date, n: number): Date {
   return copy;
 }
 
-function reportDateLabel(dateStr: string): string {
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('ar-AE', { year: 'numeric', month: 'long', day: 'numeric' });
+function reportDateLabel(dateStr: string, lang: Lang): string {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString(lang === 'ar' ? 'ar-AE' : 'en-GB', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 }
-
-const ACCOUNT_TYPE_LABELS: Record<string, string> = { revenue: 'إيراد', expense: 'مصروف' };
 
 type ReportPreset = 'yesterday' | 'last7' | 'thisMonth' | 'lastMonth';
 
@@ -274,14 +300,7 @@ function presetRange(preset: ReportPreset): { from: string; to: string } {
   };
 }
 
-const PRESET_LABELS: Record<ReportPreset, string> = {
-  yesterday: 'أمس',
-  last7: 'آخر 7 أيام',
-  thisMonth: 'هذا الشهر',
-  lastMonth: 'الشهر الماضي',
-};
-
-function FinancialReportCard() {
+function FinancialReportCard({ lang }: { lang: Lang }) {
   const [from, setFrom] = useState(() => presetRange('yesterday').from);
   const [to, setTo] = useState(() => presetRange('yesterday').to);
   const [activePreset, setActivePreset] = useState<ReportPreset | null>('yesterday');
@@ -299,7 +318,7 @@ function FinancialReportCard() {
     setDayDetails(null);
     getFinancialReport(range)
       .then(setReport)
-      .catch((err) => setError(err?.message || 'تعذّر تحميل التقرير'))
+      .catch((err) => setError(err?.message || t('تعذّر تحميل التقرير', lang)))
       .finally(() => setLoading(false));
 
     if (range.from === range.to) {
@@ -331,17 +350,17 @@ function FinancialReportCard() {
 
   return (
     <div className="card">
-      <h2><span className="dot" /> تقرير مالي</h2>
+      <h2><span className="dot" /> {t('تقرير مالي', lang)}</h2>
       <div className="services">
         <div className="svc-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-          {(Object.keys(PRESET_LABELS) as ReportPreset[]).map((p) => (
+          {(Object.keys(REPORT_PRESET_LABEL_BY_LANG[lang]) as ReportPreset[]).map((p) => (
             <button
               key={p}
               className="btn-lookup"
               style={{ opacity: activePreset === p ? 1 : 0.55, flex: '1 1 auto' }}
               onClick={() => pickPreset(p)}
             >
-              {PRESET_LABELS[p]}
+              {REPORT_PRESET_LABEL_BY_LANG[lang][p]}
             </button>
           ))}
         </div>
@@ -350,7 +369,7 @@ function FinancialReportCard() {
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ flex: '1 1 45%' }} />
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ flex: '1 1 45%' }} />
           <button className="btn-lookup" disabled={loading} onClick={applyCustomRange} style={{ flex: '1 1 100%', marginTop: 6 }}>
-            {loading ? '...' : 'عرض الفترة المحددة'}
+            {loading ? '...' : t('عرض الفترة المحددة', lang)}
           </button>
         </div>
 
@@ -359,19 +378,19 @@ function FinancialReportCard() {
         {report && !loading && (
           <>
             <div className="note" style={{ marginTop: 12 }}>
-              {reportDateLabel(report.from)} — {reportDateLabel(report.to)}
+              {reportDateLabel(report.from, lang)} — {reportDateLabel(report.to, lang)}
             </div>
 
             <div className="svc-row" style={{ justifyContent: 'space-between' }}>
-              <span>إجمالي الإيرادات</span>
+              <span>{t('إجمالي الإيرادات', lang)}</span>
               <span style={{ fontWeight: 700, color: 'var(--success, #2a7)' }}>AED {report.totalRevenue.toFixed(2)}</span>
             </div>
             <div className="svc-row" style={{ justifyContent: 'space-between' }}>
-              <span>إجمالي المصاريف</span>
+              <span>{t('إجمالي المصاريف', lang)}</span>
               <span style={{ fontWeight: 700 }}>AED {report.totalExpense.toFixed(2)}</span>
             </div>
             <div className="svc-row" style={{ justifyContent: 'space-between' }}>
-              <span>صافي الربح</span>
+              <span>{t('صافي الربح', lang)}</span>
               <span style={{ fontWeight: 700, color: report.netProfit >= 0 ? 'var(--success, #2a7)' : '#a33' }}>
                 AED {report.netProfit.toFixed(2)}
               </span>
@@ -382,8 +401,8 @@ function FinancialReportCard() {
                 {report.rows.map((r) => (
                   <div key={r.account_code} className="svc-row" style={{ justifyContent: 'space-between', fontSize: 13 }}>
                     <span>
-                      {r.account_name_ar}
-                      <span style={{ color: 'var(--muted)' }}> ({ACCOUNT_TYPE_LABELS[r.account_type] || r.account_type})</span>
+                      {lang === 'en' && r.account_name_en ? r.account_name_en : r.account_name_ar}
+                      <span style={{ color: 'var(--muted)' }}> ({ACCOUNT_TYPE_LABEL_BY_LANG[lang][r.account_type] || r.account_type})</span>
                     </span>
                     <span>AED {r.total.toFixed(2)}</span>
                   </div>
@@ -391,35 +410,35 @@ function FinancialReportCard() {
               </div>
             )}
 
-            {report.rows.length === 0 && <div className="note">ما فيه أي عملية بهذي الفترة.</div>}
+            {report.rows.length === 0 && <div className="note">{t('ما فيه أي عملية بهذي الفترة.', lang)}</div>}
 
             {report.from === report.to && (
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, margin: '8px 0' }}>تفاصيل عمليات اليوم (اللوحة/الخدمات/المبلغ)</div>
-                {dayDetailsLoading && <div className="note">جاري التحميل...</div>}
+                <div style={{ fontWeight: 700, fontSize: 13, margin: '8px 0' }}>{t('تفاصيل عمليات اليوم (اللوحة/الخدمات/المبلغ)', lang)}</div>
+                {dayDetailsLoading && <div className="note">{t('جاري التحميل...', lang)}</div>}
                 {!dayDetailsLoading && dayDetails && dayDetails.length === 0 && (
-                  <div className="note">ما فيه عمليات تسجيل يومي بهذا التاريخ.</div>
+                  <div className="note">{t('ما فيه عمليات تسجيل يومي بهذا التاريخ.', lang)}</div>
                 )}
                 {!dayDetailsLoading &&
-                  dayDetails?.map((t) => (
-                    <div key={t.id} className="svc-row" style={{ flexWrap: 'wrap', fontSize: 13 }}>
+                  dayDetails?.map((entry) => (
+                    <div key={entry.id} className="svc-row" style={{ flexWrap: 'wrap', fontSize: 13 }}>
                       <div style={{ flex: '1 1 100%', display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontWeight: 700 }}>{t.plate}</span>
-                        <span style={{ fontWeight: 700 }}>AED {t.total.toFixed(2)}</span>
+                        <span style={{ fontWeight: 700 }}>{entry.plate}</span>
+                        <span style={{ fontWeight: 700 }}>AED {entry.total.toFixed(2)}</span>
                       </div>
                       <div style={{ flex: '1 1 100%', color: 'var(--muted)' }}>
-                        {t.time} — {t.customerName} — {t.employeeName} — {t.payMethod}
+                        {entry.time} — {entry.customerName} — {entry.employeeName} — {PAY_METHOD_PLAIN_LABEL_BY_LANG[lang][entry.payMethod] || entry.payMethod}
                       </div>
                       <div style={{ flex: '1 1 100%', color: 'var(--muted)' }}>
-                        {t.services.map((s) => s.name).join('، ')}
+                        {entry.services.map((s) => (lang === 'en' && s.nameEn ? s.nameEn : s.name)).join(lang === 'en' ? ', ' : '، ')}
                       </div>
                     </div>
                   ))}
               </div>
             )}
 
-            <button className="btn-lookup" onClick={() => downloadReportCsv(report, dayDetails)} style={{ width: '100%', marginTop: 10 }}>
-              ⬇️ تحميل Excel (CSV)
+            <button className="btn-lookup" onClick={() => downloadReportCsv(report, dayDetails, lang)} style={{ width: '100%', marginTop: 10 }}>
+              {t('⬇️ تحميل Excel (CSV)', lang)}
             </button>
           </>
         )}
@@ -437,29 +456,39 @@ export default function AdminFinance({
   expenseMonths: string[];
   payrollMonths: string[];
 }) {
+  // يتبع نفس اختيار اللغة المحفوظ من الصفحة الرئيسية (localStorage) — بدون زر تبديل مستقل هنا،
+  // حتى يبقى الاختيار موحّداً عبر التطبيق كله بدل ما يختلف من صفحة لصفحة.
+  const [lang, setLang] = useState<Lang>('ar');
+  useEffect(() => {
+    const saved = window.localStorage.getItem(LANG_STORAGE_KEY);
+    if (saved === 'en' || saved === 'ar') setLang(saved);
+  }, []);
+
+  const dir = lang === 'ar' ? 'rtl' : 'ltr';
+
   return (
-    <>
+    <div dir={dir}>
       <header>
         <div className="brand">
           <div>
-            <h1>الشؤون المالية</h1>
-            <div className="en">مصاريف شهرية ورواتب</div>
+            <h1>{t('الشؤون المالية', lang)}</h1>
+            <div className="en">{t('مصاريف شهرية ورواتب', lang)}</div>
           </div>
         </div>
         <div className="date-line">
-          <a href="/admin" className="back-link" style={{ color: '#fff' }}>← الرجوع للإعدادات</a>
+          <a href="/admin" className="back-link" style={{ color: '#fff' }}>{t('← الرجوع للإعدادات', lang)}</a>
         </div>
       </header>
 
       <main>
         <div className="note">
-          كل قيد هنا يُسجَّل مباشرة بدفتر المحاسبة (accounting_transactions). فورم الرواتب يمنع تسجيل نفس العامل مرتين لنفس الشهر تلقائياً.
+          {t('كل قيد هنا يُسجَّل مباشرة بدفتر المحاسبة (accounting_transactions). فورم الرواتب يمنع تسجيل نفس العامل مرتين لنفس الشهر تلقائياً.', lang)}
         </div>
 
-        <ExpenseForm accounts={expenseAccounts} months={expenseMonths} />
-        <PayrollForm months={payrollMonths} />
-        <FinancialReportCard />
+        <ExpenseForm accounts={expenseAccounts} months={expenseMonths} lang={lang} />
+        <PayrollForm months={payrollMonths} lang={lang} />
+        <FinancialReportCard lang={lang} />
       </main>
-    </>
+    </div>
   );
 }
