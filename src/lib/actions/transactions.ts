@@ -417,15 +417,19 @@ export async function getTransactionDetail(transactionId: string): Promise<Trans
   };
 }
 
-export async function listToday(): Promise<TransactionEntry[]> {
+export async function listByDate(date: string): Promise<TransactionEntry[]> {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from('transactions')
     .select(TX_SELECT)
-    .eq('tx_date', todayDateStr())
+    .eq('tx_date', date)
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapTxRow);
+}
+
+export async function listToday(): Promise<TransactionEntry[]> {
+  return listByDate(todayDateStr());
 }
 
 export async function getTodaySummary(): Promise<TodaySummary> {
