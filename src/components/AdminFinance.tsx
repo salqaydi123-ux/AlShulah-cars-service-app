@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { getFinancialReport, getPayrollForMonth, submitExpense, submitPayroll } from '@/lib/actions/accounting';
-import type { ExpenseAccountOption, FinancialReport, PayrollMonthRow } from '@/lib/types';
+import { listByDate } from '@/lib/actions/transactions';
+import type { ExpenseAccountOption, FinancialReport, PayrollMonthRow, TransactionEntry } from '@/lib/types';
 
 function arabicMonthLabel(monthStart: string): string {
   return new Date(`${monthStart}T00:00:00Z`).toLocaleDateString('ar-AE', {
@@ -197,7 +198,8 @@ function PayrollForm({ months }: { months: string[] }) {
 }
 
 // نفس أسلوب تصدير CSV المستخدم بتصدير العملاء (AdminSettings.tsx) — BOM حتى يفتح صح بإكسل مع النص العربي.
-function downloadReportCsv(report: FinancialReport) {
+// dayDetails تُضاف فقط لما الفترة يوم واحد (نفس شرط عرضها بالشاشة).
+function downloadReportCsv(report: FinancialReport, dayDetails: TransactionEntry[] | null) {
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const lines = [
     ['الفترة', `من ${report.from} إلى ${report.to}`].map(escape).join(','),
@@ -210,6 +212,19 @@ function downloadReportCsv(report: FinancialReport) {
   for (const r of report.rows) {
     lines.push([r.account_code, r.account_name_ar, ACCOUNT_TYPE_LABELS[r.account_type] || r.account_type, r.total.toFixed(2)].map(escape).join(','));
   }
+
+  if (report.from === report.to && dayDetails && dayDetails.length > 0) {
+    lines.push('');
+    lines.push(['الوقت', 'اللوحة', 'العميل', 'الخدمات', 'الموظف', 'طريقة الدفع', 'المبلغ'].map(escape).join(','));
+    for (const t of dayDetails) {
+      lines.push(
+        [t.time, t.plate, t.customerName, t.services.map((s) => s.name).join('، '), t.employeeName, t.payMethod, t.total.toFixed(2)]
+          .map(escape)
+          .join(',')
+      );
+    }
+  }
+
   const csv = '﻿' + lines.join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -273,14 +288,27 @@ function FinancialReportCard() {
   const [report, setReport] = useState<FinancialReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dayDetails, setDayDetails] = useState<TransactionEntry[] | null>(null);
+  const [dayDetailsLoading, setDayDetailsLoading] = useState(false);
 
+  // التفاصيل التشغيلية (لوحة/خدمات/مبلغ لكل عملية) تُعرض بس لما الفترة تكون يوم واحد —
+  // بيانات "اليومي" (transactions) مو المحاسبية (accounting_transactions) اللي فيها المجاميع فقط.
   function load(range: { from: string; to: string }) {
     setLoading(true);
     setError(null);
+    setDayDetails(null);
     getFinancialReport(range)
       .then(setReport)
       .catch((err) => setError(err?.message || 'تعذّر تحميل التقرير'))
       .finally(() => setLoading(false));
+
+    if (range.from === range.to) {
+      setDayDetailsLoading(true);
+      listByDate(range.from)
+        .then(setDayDetails)
+        .catch(() => setDayDetails([]))
+        .finally(() => setDayDetailsLoading(false));
+    }
   }
 
   useEffect(() => {
@@ -365,7 +393,32 @@ function FinancialReportCard() {
 
             {report.rows.length === 0 && <div className="note">ما فيه أي عملية بهذي الفترة.</div>}
 
-            <button className="btn-lookup" onClick={() => downloadReportCsv(report)} style={{ width: '100%', marginTop: 10 }}>
+            {report.from === report.to && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, margin: '8px 0' }}>تفاصيل عمليات اليوم (اللوحة/الخدمات/المبلغ)</div>
+                {dayDetailsLoading && <div className="note">جاري التحميل...</div>}
+                {!dayDetailsLoading && dayDetails && dayDetails.length === 0 && (
+                  <div className="note">ما فيه عمليات تسجيل يومي بهذا التاريخ.</div>
+                )}
+                {!dayDetailsLoading &&
+                  dayDetails?.map((t) => (
+                    <div key={t.id} className="svc-row" style={{ flexWrap: 'wrap', fontSize: 13 }}>
+                      <div style={{ flex: '1 1 100%', display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontWeight: 700 }}>{t.plate}</span>
+                        <span style={{ fontWeight: 700 }}>AED {t.total.toFixed(2)}</span>
+                      </div>
+                      <div style={{ flex: '1 1 100%', color: 'var(--muted)' }}>
+                        {t.time} — {t.customerName} — {t.employeeName} — {t.payMethod}
+                      </div>
+                      <div style={{ flex: '1 1 100%', color: 'var(--muted)' }}>
+                        {t.services.map((s) => s.name).join('، ')}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            <button className="btn-lookup" onClick={() => downloadReportCsv(report, dayDetails)} style={{ width: '100%', marginTop: 10 }}>
               ⬇️ تحميل Excel (CSV)
             </button>
           </>
