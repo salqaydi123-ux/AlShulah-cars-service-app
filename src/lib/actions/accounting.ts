@@ -34,7 +34,7 @@ export async function getExpenseAccounts(): Promise<ExpenseAccountOption[]> {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from('chart_of_accounts')
-    .select('account_code, account_name_ar')
+    .select('account_code, account_name_ar, account_name_en')
     .eq('is_active', true)
     .order('account_code');
   if (error) throw new Error(error.message);
@@ -201,7 +201,7 @@ export async function getFinancialReport(input: FinancialReportInput): Promise<F
   const db = supabaseAdmin();
   const { data, error } = await db
     .from('accounting_transactions')
-    .select('account_code, amount, chart_of_accounts(account_name_ar, account_type)')
+    .select('account_code, amount, chart_of_accounts(account_name_ar, account_name_en, account_type)')
     .gte('transaction_date', input.from)
     .lte('transaction_date', input.to);
   if (error) throw new Error(error.message);
@@ -217,6 +217,7 @@ export async function getFinancialReport(input: FinancialReportInput): Promise<F
       byAccount.set(r.account_code, {
         account_code: r.account_code,
         account_name_ar: acc.account_name_ar,
+        account_name_en: acc.account_name_en,
         account_type: acc.account_type,
         total: Number(r.amount),
       });

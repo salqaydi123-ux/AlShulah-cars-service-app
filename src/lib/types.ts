@@ -61,6 +61,7 @@ export interface FormConfig {
 export interface ExpenseAccountOption {
   account_code: string;
   account_name_ar: string;
+  account_name_en: string | null;
 }
 
 export interface PayrollMonthRow {
@@ -74,6 +75,7 @@ export interface PayrollMonthRow {
 export interface FinancialReportAccountRow {
   account_code: string;
   account_name_ar: string;
+  account_name_en: string | null;
   account_type: string;
   total: number;
 }
