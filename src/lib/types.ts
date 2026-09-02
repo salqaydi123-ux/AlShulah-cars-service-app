@@ -72,6 +72,23 @@ export interface PayrollMonthRow {
   already_posted: boolean;
 }
 
+export interface WorkerOverviewRow {
+  worker_id: string;
+  full_name: string;
+  compensation_type: string;
+  on_leave: boolean;
+  leave_start: string | null;
+  visa_issue_date: string | null;
+  visa_expiry_date: string | null;
+  visa_last_cost: number | null;
+}
+
+export interface VisaInput {
+  visaIssueDate: string | null;
+  visaExpiryDate: string | null;
+  visaLastCost: number | null;
+}
+
 export interface FinancialReportAccountRow {
   account_code: string;
   account_name_ar: string;
