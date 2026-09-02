@@ -71,6 +71,22 @@ export interface PayrollMonthRow {
   already_posted: boolean;
 }
 
+export interface FinancialReportAccountRow {
+  account_code: string;
+  account_name_ar: string;
+  account_type: string;
+  total: number;
+}
+
+export interface FinancialReport {
+  from: string;
+  to: string;
+  totalRevenue: number;
+  totalExpense: number;
+  netProfit: number;
+  rows: FinancialReportAccountRow[];
+}
+
 export interface VehicleRecord {
   id: string;
   customer_id: string | null;

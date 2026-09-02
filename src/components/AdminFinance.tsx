@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getPayrollForMonth, submitExpense, submitPayroll } from '@/lib/actions/accounting';
-import type { ExpenseAccountOption, PayrollMonthRow } from '@/lib/types';
+import { getFinancialReport, getPayrollForMonth, submitExpense, submitPayroll } from '@/lib/actions/accounting';
+import type { ExpenseAccountOption, FinancialReport, PayrollMonthRow } from '@/lib/types';
 
 function arabicMonthLabel(monthStart: string): string {
   return new Date(`${monthStart}T00:00:00Z`).toLocaleDateString('ar-AE', {
@@ -196,6 +196,155 @@ function PayrollForm({ months }: { months: string[] }) {
   );
 }
 
+function fmtDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(d: Date, n: number): Date {
+  const copy = new Date(d);
+  copy.setDate(copy.getDate() + n);
+  return copy;
+}
+
+function reportDateLabel(dateStr: string): string {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('ar-AE', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+const ACCOUNT_TYPE_LABELS: Record<string, string> = { revenue: 'إيراد', expense: 'مصروف' };
+
+type ReportPreset = 'yesterday' | 'last7' | 'thisMonth' | 'lastMonth';
+
+function presetRange(preset: ReportPreset): { from: string; to: string } {
+  const today = new Date();
+  if (preset === 'yesterday') {
+    const y = addDays(today, -1);
+    return { from: fmtDate(y), to: fmtDate(y) };
+  }
+  if (preset === 'last7') {
+    return { from: fmtDate(addDays(today, -6)), to: fmtDate(today) };
+  }
+  if (preset === 'thisMonth') {
+    return { from: fmtDate(new Date(today.getFullYear(), today.getMonth(), 1)), to: fmtDate(today) };
+  }
+  // lastMonth
+  return {
+    from: fmtDate(new Date(today.getFullYear(), today.getMonth() - 1, 1)),
+    to: fmtDate(new Date(today.getFullYear(), today.getMonth(), 0)),
+  };
+}
+
+const PRESET_LABELS: Record<ReportPreset, string> = {
+  yesterday: 'أمس',
+  last7: 'آخر 7 أيام',
+  thisMonth: 'هذا الشهر',
+  lastMonth: 'الشهر الماضي',
+};
+
+function FinancialReportCard() {
+  const [from, setFrom] = useState(() => presetRange('yesterday').from);
+  const [to, setTo] = useState(() => presetRange('yesterday').to);
+  const [activePreset, setActivePreset] = useState<ReportPreset | null>('yesterday');
+  const [report, setReport] = useState<FinancialReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function load(range: { from: string; to: string }) {
+    setLoading(true);
+    setError(null);
+    getFinancialReport(range)
+      .then(setReport)
+      .catch((err) => setError(err?.message || 'تعذّر تحميل التقرير'))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    load(presetRange('yesterday'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function pickPreset(preset: ReportPreset) {
+    const range = presetRange(preset);
+    setActivePreset(preset);
+    setFrom(range.from);
+    setTo(range.to);
+    load(range);
+  }
+
+  function applyCustomRange() {
+    setActivePreset(null);
+    load({ from, to });
+  }
+
+  return (
+    <div className="card">
+      <h2><span className="dot" /> تقرير مالي</h2>
+      <div className="services">
+        <div className="svc-row" style={{ flexWrap: 'wrap', gap: 6 }}>
+          {(Object.keys(PRESET_LABELS) as ReportPreset[]).map((p) => (
+            <button
+              key={p}
+              className="btn-lookup"
+              style={{ opacity: activePreset === p ? 1 : 0.55, flex: '1 1 auto' }}
+              onClick={() => pickPreset(p)}
+            >
+              {PRESET_LABELS[p]}
+            </button>
+          ))}
+        </div>
+
+        <div className="svc-row" style={{ flexWrap: 'wrap', marginTop: 10 }}>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ flex: '1 1 45%' }} />
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ flex: '1 1 45%' }} />
+          <button className="btn-lookup" disabled={loading} onClick={applyCustomRange} style={{ flex: '1 1 100%', marginTop: 6 }}>
+            {loading ? '...' : 'عرض الفترة المحددة'}
+          </button>
+        </div>
+
+        {error && <div className="lookup-msg show error" style={{ marginTop: 8 }}>{error}</div>}
+
+        {report && !loading && (
+          <>
+            <div className="note" style={{ marginTop: 12 }}>
+              {reportDateLabel(report.from)} — {reportDateLabel(report.to)}
+            </div>
+
+            <div className="svc-row" style={{ justifyContent: 'space-between' }}>
+              <span>إجمالي الإيرادات</span>
+              <span style={{ fontWeight: 700, color: 'var(--success, #2a7)' }}>AED {report.totalRevenue.toFixed(2)}</span>
+            </div>
+            <div className="svc-row" style={{ justifyContent: 'space-between' }}>
+              <span>إجمالي المصاريف</span>
+              <span style={{ fontWeight: 700 }}>AED {report.totalExpense.toFixed(2)}</span>
+            </div>
+            <div className="svc-row" style={{ justifyContent: 'space-between' }}>
+              <span>صافي الربح</span>
+              <span style={{ fontWeight: 700, color: report.netProfit >= 0 ? 'var(--success, #2a7)' : '#a33' }}>
+                AED {report.netProfit.toFixed(2)}
+              </span>
+            </div>
+
+            {report.rows.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                {report.rows.map((r) => (
+                  <div key={r.account_code} className="svc-row" style={{ justifyContent: 'space-between', fontSize: 13 }}>
+                    <span>
+                      {r.account_name_ar}
+                      <span style={{ color: 'var(--muted)' }}> ({ACCOUNT_TYPE_LABELS[r.account_type] || r.account_type})</span>
+                    </span>
+                    <span>AED {r.total.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {report.rows.length === 0 && <div className="note">ما فيه أي عملية بهذي الفترة.</div>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminFinance({
   expenseAccounts,
   expenseMonths,
@@ -226,6 +375,7 @@ export default function AdminFinance({
 
         <ExpenseForm accounts={expenseAccounts} months={expenseMonths} />
         <PayrollForm months={payrollMonths} />
+        <FinancialReportCard />
       </main>
     </>
   );

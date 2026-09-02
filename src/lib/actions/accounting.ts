@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import type { ExpenseAccountOption, PayrollMonthRow } from '@/lib/types';
+import type { ExpenseAccountOption, FinancialReport, FinancialReportAccountRow, PayrollMonthRow } from '@/lib/types';
 
 // حسابات المصاريف المسموح اختيارها بفورم "مصاريف شهرية": المصاريف الثابتة (50xxx) +
 // المخصصات الفعلية عند دفعها (60200 تذاكر، 60300 تأشيرات) + المشتريات المتغيرة (70100).
@@ -183,4 +183,56 @@ export async function submitPayroll(month: string, workerIds: string[]): Promise
 
   revalidatePath('/admin/finance');
   return { postedCount: toInsert.length, skippedCount: workerIds.length - toInsert.length };
+}
+
+export interface FinancialReportInput {
+  from: string; // 'YYYY-MM-DD'
+  to: string; // 'YYYY-MM-DD'
+}
+
+// تقرير مالي شامل (إيرادات/مصاريف/صافي الربح) لأي فترة — يشمل كل قيود accounting_transactions
+// بغض النظر عن مصدرها (تسجيل يومي تلقائي، مصروف يدوي، راتب). حسابات الأصول/الالتزامات/حقوق
+// الملكية (لو استُخدمت مستقبلاً) لا تدخل بالمجاميع هنا — التقرير مقصور على الإيراد والمصروف
+// مطابقةً لنطاق view monthly_pnl الموجود.
+export async function getFinancialReport(input: FinancialReportInput): Promise<FinancialReport> {
+  if (!input.from || !input.to) throw new Error('حدد الفترة');
+  if (input.from > input.to) throw new Error('تاريخ البداية بعد تاريخ النهاية');
+
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from('accounting_transactions')
+    .select('account_code, amount, chart_of_accounts(account_name_ar, account_type)')
+    .gte('transaction_date', input.from)
+    .lte('transaction_date', input.to);
+  if (error) throw new Error(error.message);
+
+  const byAccount = new Map<string, FinancialReportAccountRow>();
+  for (const r of (data ?? []) as any[]) {
+    const acc = r.chart_of_accounts;
+    if (!acc || (acc.account_type !== 'revenue' && acc.account_type !== 'expense')) continue;
+    const existing = byAccount.get(r.account_code);
+    if (existing) {
+      existing.total += Number(r.amount);
+    } else {
+      byAccount.set(r.account_code, {
+        account_code: r.account_code,
+        account_name_ar: acc.account_name_ar,
+        account_type: acc.account_type,
+        total: Number(r.amount),
+      });
+    }
+  }
+
+  const rows = Array.from(byAccount.values()).sort((a, b) => a.account_code.localeCompare(b.account_code));
+  const totalRevenue = rows.filter((r) => r.account_type === 'revenue').reduce((s, r) => s + r.total, 0);
+  const totalExpense = rows.filter((r) => r.account_type === 'expense').reduce((s, r) => s + r.total, 0);
+
+  return {
+    from: input.from,
+    to: input.to,
+    totalRevenue: Math.round(totalRevenue * 100) / 100,
+    totalExpense: Math.round(totalExpense * 100) / 100,
+    netProfit: Math.round((totalRevenue - totalExpense) * 100) / 100,
+    rows: rows.map((r) => ({ ...r, total: Math.round(r.total * 100) / 100 })),
+  };
 }
