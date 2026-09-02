@@ -196,6 +196,32 @@ function PayrollForm({ months }: { months: string[] }) {
   );
 }
 
+// نفس أسلوب تصدير CSV المستخدم بتصدير العملاء (AdminSettings.tsx) — BOM حتى يفتح صح بإكسل مع النص العربي.
+function downloadReportCsv(report: FinancialReport) {
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const lines = [
+    ['الفترة', `من ${report.from} إلى ${report.to}`].map(escape).join(','),
+    ['إجمالي الإيرادات', report.totalRevenue.toFixed(2)].map(escape).join(','),
+    ['إجمالي المصاريف', report.totalExpense.toFixed(2)].map(escape).join(','),
+    ['صافي الربح', report.netProfit.toFixed(2)].map(escape).join(','),
+    '',
+    ['رقم الحساب', 'اسم الحساب', 'النوع', 'المبلغ'].map(escape).join(','),
+  ];
+  for (const r of report.rows) {
+    lines.push([r.account_code, r.account_name_ar, ACCOUNT_TYPE_LABELS[r.account_type] || r.account_type, r.total.toFixed(2)].map(escape).join(','));
+  }
+  const csv = '﻿' + lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `alshulah-financial-report-${report.from}-to-${report.to}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -338,6 +364,10 @@ function FinancialReportCard() {
             )}
 
             {report.rows.length === 0 && <div className="note">ما فيه أي عملية بهذي الفترة.</div>}
+
+            <button className="btn-lookup" onClick={() => downloadReportCsv(report)} style={{ width: '100%', marginTop: 10 }}>
+              ⬇️ تحميل Excel (CSV)
+            </button>
           </>
         )}
       </div>
