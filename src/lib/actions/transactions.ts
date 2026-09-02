@@ -526,6 +526,31 @@ async function getCardGrossForDate(db: ReturnType<typeof supabaseAdmin>, date: s
   return (data ?? []).reduce((s: number, r: any) => s + Number(r.total), 0);
 }
 
+// قيد "رسوم بنكية" (50350) بدفتر المحاسبة يعكس عمولة البنك الفعلية من التسوية — يُستبدل بالكامل
+// بدل ما يتكرر لو أُعيدت تسوية نفس اليوم (تصحيح رقم رسالة البنك مثلاً)، مطابقة لسلوك upsert
+// الموجود أصلاً بجدول bank_reconciliation نفسه.
+async function postBankFeeToLedger(db: ReturnType<typeof supabaseAdmin>, date: string, commission: number) {
+  const { error: delErr } = await db
+    .from('accounting_transactions')
+    .delete()
+    .eq('account_code', '50350')
+    .eq('source', 'bank_reconciliation')
+    .eq('transaction_date', date);
+  if (delErr) throw new Error(delErr.message);
+
+  if (commission <= 0) return;
+
+  const { error } = await db.from('accounting_transactions').insert({
+    transaction_date: date,
+    account_code: '50350',
+    amount: commission,
+    direction: 'debit',
+    description: `عمولة بنك فعلية (تسوية) — ${date}`,
+    source: 'bank_reconciliation',
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function reconcileBankForDate(date: string, bankNet: number): Promise<BankReconciliationResult> {
   const db = supabaseAdmin();
   const cardGrossToday = await getCardGrossForDate(db, date);
@@ -549,6 +574,8 @@ export async function reconcileBankForDate(date: string, bankNet: number): Promi
     { onConflict: 'tx_date' }
   );
   if (error) throw new Error(error.message);
+
+  await postBankFeeToLedger(db, date, actualCommission);
 
   return { cardGrossToday, bankNet, actualCommission, actualRate };
 }
