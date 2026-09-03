@@ -1,7 +1,7 @@
 'use server';
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import type { CustomerAnalytics, DormantCustomer, MonthlyRepeatStat, WeeklyVisitStat } from '@/lib/types';
+import type { CustomerAnalytics, DormantCustomer, LoyalCustomer, MonthlyRepeatStat, NewCustomerContact, WeeklyVisitStat } from '@/lib/types';
 
 export interface CustomerExportRow {
   phone: string;
@@ -54,6 +54,10 @@ const DORMANT_MIN_LIFETIME_VISITS = 3; // "كان يزور بانتظام" — �
 const DORMANT_GAP_DAYS = 45; // "توقف فترة" — ما مر عليه زيارة من هالعدد أيام
 const DORMANT_MIN_DATA_DAYS = 60; // حد أدنى لعمر البيانات قبل ما يصير التصنيف موثوق
 
+const LOYAL_MIN_LIFETIME_VISITS = 5; // "عميل منتظم يستحق مكافأة" — حد أدنى لعدد الزيارات الكلي
+const LOYAL_MAX_DAYS_SINCE_LAST_VISIT = 30; // لازم يكون لسه نشط (غير متذبذب) عشان يستحق الحفاظ عليه
+const LOYAL_MAX_LIST_SIZE = 20; // سقف لعدد الأسماء المعروضة عشان القائمة تبقى قابلة للتنفيذ
+
 export async function getCustomerAnalytics(): Promise<CustomerAnalytics> {
   const db = supabaseAdmin();
 
@@ -69,7 +73,15 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics> {
   const customerById = new Map(customers.map((c: any) => [c.id, c]));
 
   if (transactions.length === 0) {
-    return { weeklyStats: [], monthlyRepeatStats: [], dormantSectionAvailable: false, daysOfDataSoFar: 0, dormantCustomers: [] };
+    return {
+      weeklyStats: [],
+      monthlyRepeatStats: [],
+      dormantSectionAvailable: false,
+      daysOfDataSoFar: 0,
+      dormantCustomers: [],
+      loyalCustomers: [],
+      newCustomersThisWeek: [],
+    };
   }
 
   // أول زيارة لكل عميل عبر كامل تاريخ النظام — أساس تصنيف "جديد مقابل متكرر" بالأسبوع 2 وما بعده.
@@ -131,22 +143,46 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics> {
     }))
     .sort((a, b) => a.month.localeCompare(b.month));
 
+  // إجمالي الزيارات وآخر زيارة لكل عميل — أساس مشترك لقائمتي "المنتظمين" و"المتذبذبين".
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const visitsByCustomer = new Map<string, { count: number; lastVisit: string }>();
+  for (const tx of transactions) {
+    const s = visitsByCustomer.get(tx.customer_id) || { count: 0, lastVisit: tx.tx_date };
+    s.count += 1;
+    if (tx.tx_date > s.lastVisit) s.lastVisit = tx.tx_date;
+    visitsByCustomer.set(tx.customer_id, s);
+  }
+
+  // عملاء منتظمون نشطون (زيارات كثيرة + لسه يزورون بانتظام) — مرشّحون لمكافأة/تقدير للحفاظ عليهم.
+  const loyalCustomers: LoyalCustomer[] = Array.from(visitsByCustomer.entries())
+    .filter(([, s]) => s.count >= LOYAL_MIN_LIFETIME_VISITS && daysBetween(s.lastVisit, todayStr) <= LOYAL_MAX_DAYS_SINCE_LAST_VISIT)
+    .map(([customerId, s]) => {
+      const c: any = customerById.get(customerId);
+      return { customerId, name: c?.name ?? null, phone: c?.phone ?? '', totalVisits: s.count, lastVisitDate: s.lastVisit };
+    })
+    .sort((a, b) => b.totalVisits - a.totalVisits)
+    .slice(0, LOYAL_MAX_LIST_SIZE);
+
+  // عملاء جدد بالأسبوع الحالي (أول زيارة لهم بالنظام وقعت هالأسبوع) — مرشّحون لرسالة ترحيب.
+  const currentWeekStart = weekStartOf(todayStr);
+  const currentWeekBucket = weekMap.get(currentWeekStart);
+  const newCustomersThisWeek: NewCustomerContact[] = currentWeekBucket
+    ? Array.from(currentWeekBucket.newCustomers)
+        .map((customerId) => {
+          const c: any = customerById.get(customerId);
+          return { customerId, name: c?.name ?? null, phone: c?.phone ?? '', firstVisitDate: firstVisitByCustomer.get(customerId)! };
+        })
+        .sort((a, b) => b.firstVisitDate.localeCompare(a.firstVisitDate))
+    : [];
+
   // القسم الرابع (العملاء المتذبذبين): يحتاج 60 يوم بيانات فعلية على الأقل قبل ما يصير التصنيف
   // موثوق — بدونها ما نقدر نميّز "عميل منتظم توقف" عن "عميل جديد بعده وقت يثبت نمطه".
   const earliestDate = transactions[0].tx_date;
-  const todayStr = new Date().toISOString().slice(0, 10);
   const daysOfDataSoFar = daysBetween(earliestDate, todayStr);
   const dormantSectionAvailable = daysOfDataSoFar >= DORMANT_MIN_DATA_DAYS;
 
   let dormantCustomers: DormantCustomer[] = [];
   if (dormantSectionAvailable) {
-    const visitsByCustomer = new Map<string, { count: number; lastVisit: string }>();
-    for (const tx of transactions) {
-      const s = visitsByCustomer.get(tx.customer_id) || { count: 0, lastVisit: tx.tx_date };
-      s.count += 1;
-      if (tx.tx_date > s.lastVisit) s.lastVisit = tx.tx_date;
-      visitsByCustomer.set(tx.customer_id, s);
-    }
     dormantCustomers = Array.from(visitsByCustomer.entries())
       .filter(([, s]) => s.count >= DORMANT_MIN_LIFETIME_VISITS && daysBetween(s.lastVisit, todayStr) >= DORMANT_GAP_DAYS)
       .map(([customerId, s]) => {
@@ -163,5 +199,13 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics> {
       .sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit);
   }
 
-  return { weeklyStats, monthlyRepeatStats, dormantSectionAvailable, daysOfDataSoFar, dormantCustomers };
+  return {
+    weeklyStats,
+    monthlyRepeatStats,
+    dormantSectionAvailable,
+    daysOfDataSoFar,
+    dormantCustomers,
+    loyalCustomers,
+    newCustomersThisWeek,
+  };
 }
