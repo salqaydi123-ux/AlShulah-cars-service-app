@@ -63,7 +63,7 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics> {
 
   const [customersRes, transactionsRes] = await Promise.all([
     db.from('customers').select('id, phone, name'),
-    db.from('transactions').select('customer_id, tx_date').order('tx_date'),
+    db.from('transactions').select('customer_id, tx_date, vehicle_plate_snapshot').order('tx_date'),
   ]);
   if (customersRes.error) throw new Error(customersRes.error.message);
   if (transactionsRes.error) throw new Error(transactionsRes.error.message);
@@ -153,12 +153,25 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics> {
     visitsByCustomer.set(tx.customer_id, s);
   }
 
+  // آخر رقم لوحة استُخدم لكل عميل — البيانات مرتبة بـtx_date تصاعدياً، فآخر قيمة مكتوبة هي الأحدث.
+  const lastPlateByCustomer = new Map<string, string>();
+  for (const tx of transactions) {
+    if (tx.vehicle_plate_snapshot) lastPlateByCustomer.set(tx.customer_id, tx.vehicle_plate_snapshot);
+  }
+
   // عملاء منتظمون نشطون (زيارات كثيرة + لسه يزورون بانتظام) — مرشّحون لمكافأة/تقدير للحفاظ عليهم.
   const loyalCustomers: LoyalCustomer[] = Array.from(visitsByCustomer.entries())
     .filter(([, s]) => s.count >= LOYAL_MIN_LIFETIME_VISITS && daysBetween(s.lastVisit, todayStr) <= LOYAL_MAX_DAYS_SINCE_LAST_VISIT)
     .map(([customerId, s]) => {
       const c: any = customerById.get(customerId);
-      return { customerId, name: c?.name ?? null, phone: c?.phone ?? '', totalVisits: s.count, lastVisitDate: s.lastVisit };
+      return {
+        customerId,
+        name: c?.name ?? null,
+        phone: c?.phone ?? '',
+        plate: lastPlateByCustomer.get(customerId) ?? null,
+        totalVisits: s.count,
+        lastVisitDate: s.lastVisit,
+      };
     })
     .sort((a, b) => b.totalVisits - a.totalVisits)
     .slice(0, LOYAL_MAX_LIST_SIZE);
@@ -170,7 +183,14 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics> {
     ? Array.from(currentWeekBucket.newCustomers)
         .map((customerId) => {
           const c: any = customerById.get(customerId);
-          return { customerId, name: c?.name ?? null, phone: c?.phone ?? '', firstVisitDate: firstVisitByCustomer.get(customerId)! };
+          return {
+            customerId,
+            name: c?.name ?? null,
+            phone: c?.phone ?? '',
+            plate: lastPlateByCustomer.get(customerId) ?? null,
+            totalVisits: visitsByCustomer.get(customerId)?.count ?? 1,
+            firstVisitDate: firstVisitByCustomer.get(customerId)!,
+          };
         })
         .sort((a, b) => b.firstVisitDate.localeCompare(a.firstVisitDate))
     : [];
@@ -191,6 +211,7 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics> {
           customerId,
           name: c?.name ?? null,
           phone: c?.phone ?? '',
+          plate: lastPlateByCustomer.get(customerId) ?? null,
           totalVisits: s.count,
           lastVisitDate: s.lastVisit,
           daysSinceLastVisit: daysBetween(s.lastVisit, todayStr),
