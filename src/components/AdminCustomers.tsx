@@ -15,7 +15,7 @@ function arabicMonthLabel(month: string): string {
 }
 
 export default function AdminCustomers({ analytics }: { analytics: CustomerAnalytics }) {
-  const { weeklyStats, monthlyRepeatStats, dormantSectionAvailable, dormantCustomers } = analytics;
+  const { weeklyStats, monthlyRepeatStats, dormantSectionAvailable, dormantCustomers, loyalCustomers, newCustomersThisWeek } = analytics;
 
   return (
     <>
@@ -61,6 +61,44 @@ export default function AdminCustomers({ analytics }: { analytics: CustomerAnaly
             الأسبوع الأول بعد بدء التسجيل يظهر كل عملائه "جدد" دائماً — هذا طبيعي، ويبدأ التمييز الفعلي بين
             الجدد والعائدين من الأسبوع الثاني.
           </div>
+        </div>
+
+        <div className="card">
+          <h2><span className="dot" /> عملاء جدد هالأسبوع</h2>
+          {newCustomersThisWeek.length === 0 ? (
+            <div className="note">ما فيه عملاء جدد هالأسبوع لحد الآن.</div>
+          ) : (
+            <div className="services">
+              {newCustomersThisWeek.map((c) => (
+                <div key={c.customerId} className="svc-row">
+                  <span style={{ fontWeight: 700 }}>
+                    {c.name || c.phone}
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', fontWeight: 400 }}>{c.phone}</span>
+                  </span>
+                  <span style={{ fontSize: 12.5, color: 'var(--success, #2a7)' }}>أول زيارة: {c.firstVisitDate}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <h2><span className="dot" /> عملاء منتظمون (نشطون)</h2>
+          {loyalCustomers.length === 0 ? (
+            <div className="note">ما فيه عملاء وصلوا لحد الانتظام بعد (5 زيارات فأكثر، وآخر زيارة خلال 30 يوم).</div>
+          ) : (
+            <div className="services">
+              {loyalCustomers.map((c) => (
+                <div key={c.customerId} className="svc-row">
+                  <span style={{ fontWeight: 700 }}>
+                    {c.name || c.phone}
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', fontWeight: 400 }}>{c.phone}</span>
+                  </span>
+                  <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{c.totalVisits} زيارة إجمالاً</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="card">

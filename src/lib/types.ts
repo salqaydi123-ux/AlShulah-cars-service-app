@@ -219,10 +219,27 @@ export interface DormantCustomer {
   daysSinceLastVisit: number;
 }
 
+export interface LoyalCustomer {
+  customerId: string;
+  name: string | null;
+  phone: string;
+  totalVisits: number;
+  lastVisitDate: string;
+}
+
+export interface NewCustomerContact {
+  customerId: string;
+  name: string | null;
+  phone: string;
+  firstVisitDate: string;
+}
+
 export interface CustomerAnalytics {
   weeklyStats: WeeklyVisitStat[];
   monthlyRepeatStats: MonthlyRepeatStat[];
   dormantSectionAvailable: boolean; // false لحد ما يمر 60 يوم من أول تسجيل فعلي بالنظام
   daysOfDataSoFar: number;
   dormantCustomers: DormantCustomer[];
+  loyalCustomers: LoyalCustomer[]; // عملاء منتظمون نشطون — مرشّحون لمكافأة/تقدير للحفاظ عليهم
+  newCustomersThisWeek: NewCustomerContact[]; // أول زيارة لهم وقعت بالأسبوع الحالي — مرشّحون لرسالة ترحيب
 }
