@@ -194,3 +194,35 @@ export interface BankReconciliationResult {
   actualCommission: number;
   actualRate: number;
 }
+
+export interface WeeklyVisitStat {
+  weekStart: string; // اثنين الأسبوع (YYYY-MM-DD)
+  totalVisits: number;
+  uniqueCustomers: number;
+  newCustomers: number; // أول زيارة لهم بالنظام كانت بهذا الأسبوع
+  returningCustomers: number; // زاروا قبل هذا الأسبوع بأي وقت سابق
+}
+
+export interface MonthlyRepeatStat {
+  month: string; // أول الشهر (YYYY-MM-01)
+  totalVisits: number;
+  uniqueCustomers: number;
+  avgVisitsPerCustomer: number;
+}
+
+export interface DormantCustomer {
+  customerId: string;
+  name: string | null;
+  phone: string;
+  totalVisits: number;
+  lastVisitDate: string;
+  daysSinceLastVisit: number;
+}
+
+export interface CustomerAnalytics {
+  weeklyStats: WeeklyVisitStat[];
+  monthlyRepeatStats: MonthlyRepeatStat[];
+  dormantSectionAvailable: boolean; // false لحد ما يمر 60 يوم من أول تسجيل فعلي بالنظام
+  daysOfDataSoFar: number;
+  dormantCustomers: DormantCustomer[];
+}
