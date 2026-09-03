@@ -214,6 +214,7 @@ export interface DormantCustomer {
   customerId: string;
   name: string | null;
   phone: string;
+  plate: string | null;
   totalVisits: number;
   lastVisitDate: string;
   daysSinceLastVisit: number;
@@ -223,6 +224,7 @@ export interface LoyalCustomer {
   customerId: string;
   name: string | null;
   phone: string;
+  plate: string | null;
   totalVisits: number;
   lastVisitDate: string;
 }
@@ -231,6 +233,8 @@ export interface NewCustomerContact {
   customerId: string;
   name: string | null;
   phone: string;
+  plate: string | null;
+  totalVisits: number;
   firstVisitDate: string;
 }
 

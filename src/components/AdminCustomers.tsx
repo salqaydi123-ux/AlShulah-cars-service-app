@@ -2,6 +2,66 @@
 
 import type { CustomerAnalytics } from '@/lib/types';
 
+interface CategoryExportRow {
+  name: string | null;
+  phone: string;
+  plate: string | null;
+  totalVisits: number;
+}
+
+// نفس نمط تصدير CSV الموجود بشاشة الإعدادات (BOM + فواصل مع تهريب الاقتباسات) — لملف يفتح صح بإكسل.
+function downloadCategoryCsv(filename: string, rows: CategoryExportRow[]) {
+  const header = ['اسم العميل', 'رقم لوحة السيارة', 'رقم الهاتف', 'عدد الزيارات'];
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const lines = [header.map(escape).join(',')];
+  for (const r of rows) {
+    lines.push([r.name || '', r.plate || '', r.phone, String(r.totalVisits)].map(escape).join(','));
+  }
+  const csv = '﻿' + lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function CategoryCountCard({
+  title,
+  count,
+  countNote,
+  emptyNote,
+  rows,
+  filename,
+}: {
+  title: string;
+  count: number;
+  countNote: string;
+  emptyNote: string;
+  rows: CategoryExportRow[];
+  filename: string;
+}) {
+  return (
+    <div className="card">
+      <h2><span className="dot" /> {title}</h2>
+      {count === 0 ? (
+        <div className="note">{emptyNote}</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{count}</div>
+          <div className="note" style={{ marginTop: 4 }}>{countNote}</div>
+          <button className="btn-lookup" style={{ marginTop: 8 }} onClick={() => downloadCategoryCsv(filename, rows)}>
+            ⬇️ تحميل Excel (CSV)
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function arabicWeekLabel(weekStart: string): string {
   const start = new Date(`${weekStart}T00:00:00Z`);
   const end = new Date(start);
@@ -63,43 +123,23 @@ export default function AdminCustomers({ analytics }: { analytics: CustomerAnaly
           </div>
         </div>
 
-        <div className="card">
-          <h2><span className="dot" /> عملاء جدد هالأسبوع</h2>
-          {newCustomersThisWeek.length === 0 ? (
-            <div className="note">ما فيه عملاء جدد هالأسبوع لحد الآن.</div>
-          ) : (
-            <div className="services">
-              {newCustomersThisWeek.map((c) => (
-                <div key={c.customerId} className="svc-row">
-                  <span style={{ fontWeight: 700 }}>
-                    {c.name || c.phone}
-                    <span style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', fontWeight: 400 }}>{c.phone}</span>
-                  </span>
-                  <span style={{ fontSize: 12.5, color: 'var(--success, #2a7)' }}>أول زيارة: {c.firstVisitDate}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <CategoryCountCard
+          title="عملاء جدد هالأسبوع"
+          count={newCustomersThisWeek.length}
+          countNote="عميل جديد — التفاصيل (الاسم/اللوحة/الجوال) بملف Excel."
+          emptyNote="ما فيه عملاء جدد هالأسبوع لحد الآن."
+          rows={newCustomersThisWeek}
+          filename={`alshulah-new-customers-${new Date().toISOString().slice(0, 10)}.csv`}
+        />
 
-        <div className="card">
-          <h2><span className="dot" /> عملاء منتظمون (نشطون)</h2>
-          {loyalCustomers.length === 0 ? (
-            <div className="note">ما فيه عملاء وصلوا لحد الانتظام بعد (5 زيارات فأكثر، وآخر زيارة خلال 30 يوم).</div>
-          ) : (
-            <div className="services">
-              {loyalCustomers.map((c) => (
-                <div key={c.customerId} className="svc-row">
-                  <span style={{ fontWeight: 700 }}>
-                    {c.name || c.phone}
-                    <span style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', fontWeight: 400 }}>{c.phone}</span>
-                  </span>
-                  <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{c.totalVisits} زيارة إجمالاً</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <CategoryCountCard
+          title="عملاء منتظمون (نشطون)"
+          count={loyalCustomers.length}
+          countNote="عميل منتظم (5 زيارات فأكثر، وآخر زيارة خلال 30 يوم) — التفاصيل بملف Excel."
+          emptyNote="ما فيه عملاء وصلوا لحد الانتظام بعد (5 زيارات فأكثر، وآخر زيارة خلال 30 يوم)."
+          rows={loyalCustomers}
+          filename={`alshulah-loyal-customers-${new Date().toISOString().slice(0, 10)}.csv`}
+        />
 
         <div className="card">
           <h2><span className="dot" /> متوسط الزيارات الشهري لكل عميل</h2>
@@ -131,19 +171,17 @@ export default function AdminCustomers({ analytics }: { analytics: CustomerAnaly
           ) : dormantCustomers.length === 0 ? (
             <div className="note">ما فيه عملاء متذبذبون حالياً — كل العملاء المنتظمين ما زالوا نشطين.</div>
           ) : (
-            <div className="services">
-              {dormantCustomers.map((c) => (
-                <div key={c.customerId} className="svc-row">
-                  <span style={{ fontWeight: 700 }}>
-                    {c.name || c.phone}
-                    <span style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', fontWeight: 400 }}>{c.phone}</span>
-                  </span>
-                  <span style={{ fontSize: 12.5, color: '#a33' }}>
-                    آخر زيارة قبل {c.daysSinceLastVisit} يوم · {c.totalVisits} زيارة إجمالاً
-                  </span>
-                </div>
-              ))}
-            </div>
+            <>
+              <div style={{ fontSize: 22, fontWeight: 700 }}>{dormantCustomers.length}</div>
+              <div className="note" style={{ marginTop: 4 }}>عميل متذبذب — التفاصيل (الاسم/اللوحة/الجوال) بملف Excel.</div>
+              <button
+                className="btn-lookup"
+                style={{ marginTop: 8 }}
+                onClick={() => downloadCategoryCsv(`alshulah-dormant-customers-${new Date().toISOString().slice(0, 10)}.csv`, dormantCustomers)}
+              >
+                ⬇️ تحميل Excel (CSV)
+              </button>
+            </>
           )}
         </div>
       </main>
