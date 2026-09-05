@@ -197,6 +197,12 @@ const DICT: Record<string, string> = {
   'الخدمات': 'Services',
   'الموظف': 'Employee',
   'طريقة الدفع': 'Payment method',
+  'عوامل مؤثرة بهذي الفترة': 'Demand factors this period',
+  'يوم ممطر': 'rainy day(s)',
+  'يوم حر شديد': 'extreme-heat day(s)',
+  'ما فيه بيانات طقس لهذي الفترة بعد — اضغط "مزامنة الطقس" بشاشة عوامل الطلب.':
+    'No weather data for this period yet — run "Sync weather" on the Demand Factors screen.',
+  'ما فيه عوامل مؤثرة يدوية بهذي الفترة.': 'No manual events logged for this period.',
 };
 
 export function t(text: string, lang: Lang): string {

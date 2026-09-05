@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import type { BusinessFactorEntry, DemandFactorsReportRow, WeatherSyncResult } from '@/lib/types';
+import type { BusinessFactorEntry, DemandFactorsReportRow, DemandFactorsSummary, WeatherSyncResult } from '@/lib/types';
 
 // إحداثيات كلباء، الشارقة.
 const KALBA_LAT = 25.0333;
@@ -183,4 +183,27 @@ export async function getDemandFactorsReport(from: string, to: string): Promise<
     });
   }
   return rows;
+}
+
+// ملخّص مبسّط للعوامل المؤثرة بفترة معيّنة — يُستخدم كخانة جانبية صغيرة بتقرير /admin/finance
+// المالي الشامل، بدون تكرار الجدول اليومي الكامل الموجود بـ/admin/demand-factors.
+export async function getDemandFactorsSummary(from: string, to: string): Promise<DemandFactorsSummary> {
+  if (!from || !to) throw new Error('حدد الفترة');
+  if (from > to) throw new Error('تاريخ البداية بعد تاريخ النهاية');
+
+  const db = supabaseAdmin();
+  const [weatherRes, factorsRes] = await Promise.all([
+    db.from('weather_daily').select('is_rainy, is_extreme_heat').gte('date', from).lte('date', to),
+    db.from('business_factors_log').select('factor_date, note').gte('factor_date', from).lte('factor_date', to).order('factor_date'),
+  ]);
+  if (weatherRes.error) throw new Error(weatherRes.error.message);
+  if (factorsRes.error) throw new Error(factorsRes.error.message);
+
+  const weatherRows = (weatherRes.data ?? []) as any[];
+  return {
+    rainyDays: weatherRows.filter((w) => w.is_rainy).length,
+    extremeHeatDays: weatherRows.filter((w) => w.is_extreme_heat).length,
+    weatherDataAvailable: weatherRows.length > 0,
+    notes: (factorsRes.data ?? []).map((f: any) => ({ date: f.factor_date, note: f.note })),
+  };
 }
