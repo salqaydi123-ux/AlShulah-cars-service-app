@@ -267,3 +267,11 @@ export interface DemandFactorsReportRow {
   isExtremeHeat: boolean | null;
   notes: string[]; // ملاحظات business_factors_log لنفس اليوم
 }
+
+// ملخّص مبسّط (لخانة جانبية بسيطة بتقرير /admin/finance) — بدون تفصيل يومي.
+export interface DemandFactorsSummary {
+  rainyDays: number;
+  extremeHeatDays: number;
+  weatherDataAvailable: boolean; // false لو ما فيه بيانات طقس بالفترة أصلاً (لسه ما تمت مزامنتها)
+  notes: { date: string; note: string }[];
+}

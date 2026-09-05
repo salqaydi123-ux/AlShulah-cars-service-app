@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getFinancialReport, getPayrollForMonth, submitExpense, submitPayroll } from '@/lib/actions/accounting';
 import { listByDate } from '@/lib/actions/transactions';
+import { getDemandFactorsSummary } from '@/lib/actions/demandFactors';
 import {
   ACCOUNT_TYPE_LABEL_BY_LANG,
   COMPENSATION_LABEL_BY_LANG,
@@ -12,7 +13,7 @@ import {
   t,
   type Lang,
 } from '@/lib/i18n';
-import type { ExpenseAccountOption, FinancialReport, PayrollMonthRow, TransactionEntry } from '@/lib/types';
+import type { DemandFactorsSummary, ExpenseAccountOption, FinancialReport, PayrollMonthRow, TransactionEntry } from '@/lib/types';
 
 function monthLabel(monthStart: string, lang: Lang): string {
   return new Date(`${monthStart}T00:00:00Z`).toLocaleDateString(lang === 'ar' ? 'ar-AE' : 'en-GB', {
@@ -309,6 +310,7 @@ function FinancialReportCard({ lang }: { lang: Lang }) {
   const [error, setError] = useState<string | null>(null);
   const [dayDetails, setDayDetails] = useState<TransactionEntry[] | null>(null);
   const [dayDetailsLoading, setDayDetailsLoading] = useState(false);
+  const [factorsSummary, setFactorsSummary] = useState<DemandFactorsSummary | null>(null);
 
   // التفاصيل التشغيلية (لوحة/خدمات/مبلغ لكل عملية) تُعرض بس لما الفترة تكون يوم واحد —
   // بيانات "اليومي" (transactions) مو المحاسبية (accounting_transactions) اللي فيها المجاميع فقط.
@@ -320,6 +322,11 @@ function FinancialReportCard({ lang }: { lang: Lang }) {
       .then(setReport)
       .catch((err) => setError(err?.message || t('تعذّر تحميل التقرير', lang)))
       .finally(() => setLoading(false));
+
+    setFactorsSummary(null);
+    getDemandFactorsSummary(range.from, range.to)
+      .then(setFactorsSummary)
+      .catch(() => setFactorsSummary(null)); // خانة جانبية اختيارية — أي خطأ هنا ما يعطّل التقرير المالي الأساسي
 
     if (range.from === range.to) {
       setDayDetailsLoading(true);
@@ -395,6 +402,41 @@ function FinancialReportCard({ lang }: { lang: Lang }) {
                 AED {report.netProfit.toFixed(2)}
               </span>
             </div>
+
+            {factorsSummary && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'var(--panel-alt, #f4f4f2)',
+                  fontSize: 12.5,
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>{t('عوامل مؤثرة بهذي الفترة', lang)}</div>
+                {!factorsSummary.weatherDataAvailable ? (
+                  <div style={{ color: 'var(--muted)' }}>
+                    {t('ما فيه بيانات طقس لهذي الفترة بعد — اضغط "مزامنة الطقس" بشاشة عوامل الطلب.', lang)}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <span>🌧️ {factorsSummary.rainyDays} {t('يوم ممطر', lang)}</span>
+                    <span>🔥 {factorsSummary.extremeHeatDays} {t('يوم حر شديد', lang)}</span>
+                  </div>
+                )}
+                {factorsSummary.notes.length === 0 ? (
+                  <div style={{ color: 'var(--muted)', marginTop: 4 }}>{t('ما فيه عوامل مؤثرة يدوية بهذي الفترة.', lang)}</div>
+                ) : (
+                  <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
+                    {factorsSummary.notes.map((n, i) => (
+                      <li key={i}>
+                        {n.date}: {n.note}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             {report.rows.length > 0 && (
               <div style={{ marginTop: 10 }}>
