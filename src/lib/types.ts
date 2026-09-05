@@ -247,3 +247,23 @@ export interface CustomerAnalytics {
   loyalCustomers: LoyalCustomer[]; // عملاء منتظمون نشطون — مرشّحون لمكافأة/تقدير للحفاظ عليهم
   newCustomersThisWeek: NewCustomerContact[]; // أول زيارة لهم وقعت بالأسبوع الحالي — مرشّحون لرسالة ترحيب
 }
+
+export interface BusinessFactorEntry {
+  id: string;
+  factorDate: string; // YYYY-MM-DD
+  note: string;
+}
+
+export interface WeatherSyncResult {
+  daysFetched: number;
+  message: string;
+}
+
+export interface DemandFactorsReportRow {
+  date: string; // YYYY-MM-DD
+  revenue: number;
+  isRainy: boolean | null; // null = ما فيه بيانات طقس لهذا اليوم بعد
+  tempMaxC: number | null;
+  isExtremeHeat: boolean | null;
+  notes: string[]; // ملاحظات business_factors_log لنفس اليوم
+}
