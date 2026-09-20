@@ -58,6 +58,54 @@ export interface FormConfig {
   employees: Employee[];
 }
 
+export interface ExpenseAccountOption {
+  account_code: string;
+  account_name_ar: string;
+  account_name_en: string | null;
+}
+
+export interface PayrollMonthRow {
+  worker_id: string;
+  full_name: string;
+  compensation_type: string;
+  amount_due: number;
+  already_posted: boolean;
+}
+
+export interface WorkerOverviewRow {
+  worker_id: string;
+  full_name: string;
+  compensation_type: string;
+  on_leave: boolean;
+  leave_start: string | null;
+  visa_issue_date: string | null;
+  visa_expiry_date: string | null;
+  visa_last_cost: number | null;
+}
+
+export interface VisaInput {
+  visaIssueDate: string | null;
+  visaExpiryDate: string | null;
+  visaLastCost: number | null;
+}
+
+export interface FinancialReportAccountRow {
+  account_code: string;
+  account_name_ar: string;
+  account_name_en: string | null;
+  account_type: string;
+  total: number;
+}
+
+export interface FinancialReport {
+  from: string;
+  to: string;
+  totalRevenue: number;
+  totalExpense: number;
+  netProfit: number;
+  rows: FinancialReportAccountRow[];
+}
+
 export interface VehicleRecord {
   id: string;
   customer_id: string | null;
@@ -146,4 +194,85 @@ export interface BankReconciliationResult {
   bankNet: number;
   actualCommission: number;
   actualRate: number;
+}
+
+export interface WeeklyVisitStat {
+  weekStart: string; // اثنين الأسبوع (YYYY-MM-DD)
+  totalVisits: number;
+  uniqueCustomers: number;
+  newCustomers: number; // أول زيارة لهم بالنظام كانت بهذا الأسبوع
+  returningCustomers: number; // زاروا قبل هذا الأسبوع بأي وقت سابق
+}
+
+export interface MonthlyRepeatStat {
+  month: string; // أول الشهر (YYYY-MM-01)
+  totalVisits: number;
+  uniqueCustomers: number;
+  avgVisitsPerCustomer: number;
+}
+
+export interface DormantCustomer {
+  customerId: string;
+  name: string | null;
+  phone: string;
+  plate: string | null;
+  totalVisits: number;
+  lastVisitDate: string;
+  daysSinceLastVisit: number;
+}
+
+export interface LoyalCustomer {
+  customerId: string;
+  name: string | null;
+  phone: string;
+  plate: string | null;
+  totalVisits: number;
+  lastVisitDate: string;
+}
+
+export interface NewCustomerContact {
+  customerId: string;
+  name: string | null;
+  phone: string;
+  plate: string | null;
+  totalVisits: number;
+  firstVisitDate: string;
+}
+
+export interface CustomerAnalytics {
+  weeklyStats: WeeklyVisitStat[];
+  monthlyRepeatStats: MonthlyRepeatStat[];
+  dormantSectionAvailable: boolean; // false لحد ما يمر 60 يوم من أول تسجيل فعلي بالنظام
+  daysOfDataSoFar: number;
+  dormantCustomers: DormantCustomer[];
+  loyalCustomers: LoyalCustomer[]; // عملاء منتظمون نشطون — مرشّحون لمكافأة/تقدير للحفاظ عليهم
+  newCustomersThisWeek: NewCustomerContact[]; // أول زيارة لهم وقعت بالأسبوع الحالي — مرشّحون لرسالة ترحيب
+}
+
+export interface BusinessFactorEntry {
+  id: string;
+  factorDate: string; // YYYY-MM-DD
+  note: string;
+}
+
+export interface WeatherSyncResult {
+  daysFetched: number;
+  message: string;
+}
+
+export interface DemandFactorsReportRow {
+  date: string; // YYYY-MM-DD
+  revenue: number;
+  isRainy: boolean | null; // null = ما فيه بيانات طقس لهذا اليوم بعد
+  tempMaxC: number | null;
+  isExtremeHeat: boolean | null;
+  notes: string[]; // ملاحظات business_factors_log لنفس اليوم
+}
+
+// ملخّص مبسّط (لخانة جانبية بسيطة بتقرير /admin/finance) — بدون تفصيل يومي.
+export interface DemandFactorsSummary {
+  rainyDays: number;
+  extremeHeatDays: number;
+  weatherDataAvailable: boolean; // false لو ما فيه بيانات طقس بالفترة أصلاً (لسه ما تمت مزامنتها)
+  notes: { date: string; note: string }[];
 }
