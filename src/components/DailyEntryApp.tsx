@@ -41,8 +41,8 @@ function fmtDate(lang: Lang): string {
 }
 
 // entries هنا دايماً عمليات اليوم فقط (tx_date = اليوم)، فما تقدر تعكس مستحقات أيام سابقة
-// تحصّلت اليوم — لذا collectedFromPreviousDues يُمرَّر من خارج الدالة ويُتابَع بحالة منفصلة.
-function buildSummary(entries: TransactionEntry[], collectedFromPreviousDues: number): TodaySummary {
+// تحصّلت اليوم — لذا القيمتين يُمرَّرون من خارج الدالة ويُتابَعون بحالة منفصلة.
+function buildSummary(entries: TransactionEntry[], collectedFromPreviousDuesCash: number, collectedFromPreviousDuesCard: number): TodaySummary {
   const cash = entries.filter((e) => e.payStatus === 'paid' && e.payMethod === 'نقدي').reduce((s, e) => s + e.total, 0);
   const cardEntries = entries.filter((e) => e.payStatus === 'paid' && e.payMethod === 'بطاقة');
   const cardGross = cardEntries.reduce((s, e) => s + e.total, 0);
@@ -52,7 +52,18 @@ function buildSummary(entries: TransactionEntry[], collectedFromPreviousDues: nu
   const collected = cash + cardNet + collectedLater;
   const pending = entries.filter((e) => e.payStatus === 'pending').reduce((s, e) => s + e.total, 0);
   const grand = cash + cardGross + collectedLater + pending;
-  return { cash, cardGross, cardNet, cardCommission, collectedLater, collectedFromPreviousDues, collected, pending, grand };
+  return {
+    cash,
+    cardGross,
+    cardNet,
+    cardCommission,
+    collectedLater,
+    collectedFromPreviousDuesCash,
+    collectedFromPreviousDuesCard,
+    collected,
+    pending,
+    grand,
+  };
 }
 
 function catalogLabel(s: { name: string; name_en: string | null }, lang: Lang): string {
@@ -154,8 +165,12 @@ export default function DailyEntryApp({
   const [pendingLoaded, setPendingLoaded] = useState(false);
   const [lastSearchQuery, setLastSearchQuery] = useState('');
 
-  const [prevDuesCollectedToday, setPrevDuesCollectedToday] = useState(initialSummary.collectedFromPreviousDues);
-  const summary = useMemo(() => buildSummary(entries, prevDuesCollectedToday), [entries, prevDuesCollectedToday]);
+  const [prevDuesCollectedCashToday, setPrevDuesCollectedCashToday] = useState(initialSummary.collectedFromPreviousDuesCash);
+  const [prevDuesCollectedCardToday, setPrevDuesCollectedCardToday] = useState(initialSummary.collectedFromPreviousDuesCard);
+  const summary = useMemo(
+    () => buildSummary(entries, prevDuesCollectedCashToday, prevDuesCollectedCardToday),
+    [entries, prevDuesCollectedCashToday, prevDuesCollectedCardToday]
+  );
 
   const selectedWash = config.washOptions.find((w) => w.code === washCode);
   const washPrice = selectedWash
@@ -535,17 +550,18 @@ export default function DailyEntryApp({
     setPendingLoaded(true);
   }
 
-  async function handleCollect(id: string) {
+  async function handleCollect(id: string, method: 'نقدي' | 'بطاقة') {
     const item = entries.find((e) => e.id === id) || pendingList.find((e) => e.id === id);
     if (item && item.date !== todayDate) {
-      setPrevDuesCollectedToday((prev) => prev + item.total);
+      if (method === 'نقدي') setPrevDuesCollectedCashToday((prev) => prev + item.total);
+      else setPrevDuesCollectedCardToday((prev) => prev + item.total);
     }
     setEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, payStatus: 'paid', payMethod: 'محصّل لاحقاً' } : e))
+      prev.map((e) => (e.id === id ? { ...e, payStatus: 'paid', payMethod: method } : e))
     );
-    setPendingList((prev) => prev.map((e) => (e.id === id ? { ...e, payStatus: 'paid', payMethod: 'محصّل لاحقاً' } : e)));
+    setPendingList((prev) => prev.map((e) => (e.id === id ? { ...e, payStatus: 'paid', payMethod: method } : e)));
     startTransition(() => {
-      collectPayment(id).catch(() => {
+      collectPayment(id, method).catch(() => {
         /* التراجع اليدوي ممكن لاحقاً لو لزم — الأولوية الآن للاستجابة الفورية بالواجهة */
       });
     });
@@ -872,13 +888,17 @@ export default function DailyEntryApp({
               </span>
               <span className="sv">{summary.collected.toFixed(2)} AED</span>
             </div>
-            {summary.collectedFromPreviousDues > 0 && (
+            {(summary.collectedFromPreviousDuesCash > 0 || summary.collectedFromPreviousDuesCard > 0) && (
               <div className="sum-row" style={{ background: '#eef6ee' }}>
                 <span className="sk">
                   {tr('مستحقات سابقة تحصَّلت اليوم')}
-                  <span className="sub">{tr('غير محسوبة ضمن مبيعات اليوم — محسوبة على تاريخ الخدمة الأصلي')}</span>
+                  <span className="sub">
+                    {lang === 'ar'
+                      ? `نقدي ${summary.collectedFromPreviousDuesCash} + بطاقة ${summary.collectedFromPreviousDuesCard} — غير محسوبة ضمن مبيعات اليوم`
+                      : `Cash ${summary.collectedFromPreviousDuesCash} + Card ${summary.collectedFromPreviousDuesCard} — not counted in today's sales`}
+                  </span>
                 </span>
-                <span className="sv">{summary.collectedFromPreviousDues.toFixed(2)} AED</span>
+                <span className="sv">{(summary.collectedFromPreviousDuesCash + summary.collectedFromPreviousDuesCard).toFixed(2)} AED</span>
               </div>
             )}
             <div className="sum-row pending">
@@ -983,7 +1003,10 @@ export default function DailyEntryApp({
                     <div className="li-amt" style={{ marginBottom: 6 }}>{e.total} <span style={{ fontSize: 10 }}>AED</span></div>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                       {e.payStatus !== 'paid' && (
-                        <button className="btn-lookup" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => handleCollect(e.id)}>{tr('تحصيل الآن')}</button>
+                        <>
+                          <button className="btn-lookup" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => handleCollect(e.id, 'نقدي')}>{tr('تحصيل نقدي')}</button>
+                          <button className="btn-lookup" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => handleCollect(e.id, 'بطاقة')}>{tr('تحصيل بطاقة')}</button>
+                        </>
                       )}
                       <button
                         className="btn-lookup"

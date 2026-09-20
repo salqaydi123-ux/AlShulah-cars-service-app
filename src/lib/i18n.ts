@@ -143,6 +143,8 @@ const DICT: Record<string, string> = {
   'إجمالي كل العمليات:': 'Total of all entries:',
   'منها غير محصَّل:': 'Uncollected:',
   'تحصيل الآن': 'Collect Now',
+  'تحصيل نقدي': 'Collect Cash',
+  'تحصيل بطاقة': 'Collect Card',
   'تعديل': 'Edit',
   'حذف': 'Delete',
   '📤 مشاركة الكشف عبر واتساب': '📤 Share Statement via WhatsApp',
