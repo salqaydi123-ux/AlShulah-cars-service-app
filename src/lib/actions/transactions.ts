@@ -440,7 +440,19 @@ export async function listToday(): Promise<TransactionEntry[]> {
   return listByDate(todayDateStr());
 }
 
+async function getCollectedFromPreviousDuesForDate(db: ReturnType<typeof supabaseAdmin>, date: string): Promise<number> {
+  const { data, error } = await db
+    .from('transactions')
+    .select('total')
+    .eq('collected_date', date)
+    .neq('tx_date', date);
+  if (error) throw new Error(error.message);
+  return (data ?? []).reduce((s: number, r: any) => s + Number(r.total), 0);
+}
+
 export async function getTodaySummary(): Promise<TodaySummary> {
+  const db = supabaseAdmin();
+  const today = todayDateStr();
   const entries = await listToday();
 
   const cash = entries.filter((e) => e.payStatus === 'paid' && e.payMethod === 'نقدي').reduce((s, e) => s + e.total, 0);
@@ -449,11 +461,12 @@ export async function getTodaySummary(): Promise<TodaySummary> {
   const cardCommission = cardEntries.reduce((s, e) => s + e.commissionAmount, 0);
   const cardNet = cardEntries.reduce((s, e) => s + e.netAmount, 0);
   const collectedLater = entries.filter((e) => e.payStatus === 'paid' && e.payMethod === 'محصّل لاحقاً').reduce((s, e) => s + e.total, 0);
+  const collectedFromPreviousDues = await getCollectedFromPreviousDuesForDate(db, today);
   const collected = cash + cardNet + collectedLater;
   const pending = entries.filter((e) => e.payStatus === 'pending').reduce((s, e) => s + e.total, 0);
   const grand = cash + cardGross + collectedLater + pending;
 
-  return { cash, cardGross, cardNet, cardCommission, collectedLater, collected, pending, grand };
+  return { cash, cardGross, cardNet, cardCommission, collectedLater, collectedFromPreviousDues, collected, pending, grand };
 }
 
 export async function searchStatement(query: string): Promise<TransactionEntry[]> {
@@ -518,7 +531,7 @@ export async function collectPayment(transactionId: string): Promise<void> {
   const db = supabaseAdmin();
   const { error } = await db
     .from('transactions')
-    .update({ pay_status: 'paid', pay_method: 'محصّل لاحقاً' })
+    .update({ pay_status: 'paid', pay_method: 'محصّل لاحقاً', collected_date: todayDateStr() })
     .eq('id', transactionId);
   if (error) throw new Error(error.message);
 }

@@ -122,6 +122,8 @@ const DICT: Record<string, string> = {
   'ملخص اليوم المالي': "Today's Financial Summary",
   'مُحصَّل فعلياً': 'Actually Collected',
   'آجل — غير محصَّل (لحين السداد)': 'Deferred — Uncollected',
+  'مستحقات سابقة تحصَّلت اليوم': 'Previous dues collected today',
+  'غير محسوبة ضمن مبيعات اليوم — محسوبة على تاريخ الخدمة الأصلي': 'Not counted in today\'s sales — attributed to the original service date',
   'الإجمالي الكلي (حجم المبيعات)': 'Grand Total (sales volume)',
   '🏦 تسوية مع رسالة البنك (لأي تاريخ)': '🏦 Bank SMS Reconciliation (any date)',
   'المبلغ الفعلي من رسالة البنك': 'Actual amount from bank SMS',

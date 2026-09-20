@@ -184,6 +184,7 @@ export interface TodaySummary {
   cardNet: number;
   cardCommission: number;
   collectedLater: number;
+  collectedFromPreviousDues: number; // مستحقات من أيام سابقة تحصّلت اليوم — بتاريخ الخدمة الأصلي بالتقارير، مو اليوم
   collected: number;
   pending: number;
   grand: number;

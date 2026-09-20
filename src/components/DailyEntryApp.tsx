@@ -40,7 +40,9 @@ function fmtDate(lang: Lang): string {
   return new Date().toLocaleDateString(lang === 'ar' ? 'ar-AE' : 'en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function buildSummary(entries: TransactionEntry[]): TodaySummary {
+// entries هنا دايماً عمليات اليوم فقط (tx_date = اليوم)، فما تقدر تعكس مستحقات أيام سابقة
+// تحصّلت اليوم — لذا collectedFromPreviousDues يُمرَّر من خارج الدالة ويُتابَع بحالة منفصلة.
+function buildSummary(entries: TransactionEntry[], collectedFromPreviousDues: number): TodaySummary {
   const cash = entries.filter((e) => e.payStatus === 'paid' && e.payMethod === 'نقدي').reduce((s, e) => s + e.total, 0);
   const cardEntries = entries.filter((e) => e.payStatus === 'paid' && e.payMethod === 'بطاقة');
   const cardGross = cardEntries.reduce((s, e) => s + e.total, 0);
@@ -50,7 +52,7 @@ function buildSummary(entries: TransactionEntry[]): TodaySummary {
   const collected = cash + cardNet + collectedLater;
   const pending = entries.filter((e) => e.payStatus === 'pending').reduce((s, e) => s + e.total, 0);
   const grand = cash + cardGross + collectedLater + pending;
-  return { cash, cardGross, cardNet, cardCommission, collectedLater, collected, pending, grand };
+  return { cash, cardGross, cardNet, cardCommission, collectedLater, collectedFromPreviousDues, collected, pending, grand };
 }
 
 function catalogLabel(s: { name: string; name_en: string | null }, lang: Lang): string {
@@ -152,7 +154,8 @@ export default function DailyEntryApp({
   const [pendingLoaded, setPendingLoaded] = useState(false);
   const [lastSearchQuery, setLastSearchQuery] = useState('');
 
-  const summary = useMemo(() => buildSummary(entries), [entries]);
+  const [prevDuesCollectedToday, setPrevDuesCollectedToday] = useState(initialSummary.collectedFromPreviousDues);
+  const summary = useMemo(() => buildSummary(entries, prevDuesCollectedToday), [entries, prevDuesCollectedToday]);
 
   const selectedWash = config.washOptions.find((w) => w.code === washCode);
   const washPrice = selectedWash
@@ -533,6 +536,10 @@ export default function DailyEntryApp({
   }
 
   async function handleCollect(id: string) {
+    const item = entries.find((e) => e.id === id) || pendingList.find((e) => e.id === id);
+    if (item && item.date !== todayDate) {
+      setPrevDuesCollectedToday((prev) => prev + item.total);
+    }
     setEntries((prev) =>
       prev.map((e) => (e.id === id ? { ...e, payStatus: 'paid', payMethod: 'محصّل لاحقاً' } : e))
     );
@@ -865,6 +872,15 @@ export default function DailyEntryApp({
               </span>
               <span className="sv">{summary.collected.toFixed(2)} AED</span>
             </div>
+            {summary.collectedFromPreviousDues > 0 && (
+              <div className="sum-row" style={{ background: '#eef6ee' }}>
+                <span className="sk">
+                  {tr('مستحقات سابقة تحصَّلت اليوم')}
+                  <span className="sub">{tr('غير محسوبة ضمن مبيعات اليوم — محسوبة على تاريخ الخدمة الأصلي')}</span>
+                </span>
+                <span className="sv">{summary.collectedFromPreviousDues.toFixed(2)} AED</span>
+              </div>
+            )}
             <div className="sum-row pending">
               <span className="sk">{tr('آجل — غير محصَّل (لحين السداد)')}</span>
               <span className="sv">{summary.pending} AED</span>
