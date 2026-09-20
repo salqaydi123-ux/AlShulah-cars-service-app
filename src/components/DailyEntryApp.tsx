@@ -768,6 +768,7 @@ export default function DailyEntryApp({
                 <input
                   type="number"
                   className="svc-price"
+                  placeholder={tr('السعر (AED)')}
                   value={c.price || ''}
                   onChange={(e) => updateCustomServicePrice(c.id, parseFloat(e.target.value) || 0)}
                 />

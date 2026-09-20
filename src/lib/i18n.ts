@@ -92,6 +92,7 @@ const DICT: Record<string, string> = {
   'أكمل اسم وسعر الخدمة الإضافية أو احذفها': 'Complete the custom service name and price, or remove it',
   '+ إضافة خدمة أخرى': '+ Add another service',
   'اسم الخدمة': 'Service name',
+  'السعر (AED)': 'Price (AED)',
   'إضافات الغسيل (اختياري)': 'Wash Add-ons (optional)',
   'سعر ثابت': 'Fixed price',
 
