@@ -126,6 +126,7 @@ export default function DailyEntryApp({
   const [addonPrices, setAddonPrices] = useState<Record<string, number>>({});
   const [manualChecked, setManualChecked] = useState<Set<string>>(new Set());
   const [manualPrices, setManualPrices] = useState<Record<string, number>>(emptyManualPrices);
+  const [customServices, setCustomServices] = useState<{ id: string; name: string; price: number }[]>([]);
 
   // الدفع والتنفيذ
   const [payMethod, setPayMethod] = useState<PayMethod>('نقدي');
@@ -172,8 +173,11 @@ export default function DailyEntryApp({
     for (const code of manualChecked) {
       sum += manualPrices[code] || 0;
     }
+    for (const c of customServices) {
+      sum += c.price;
+    }
     return sum;
-  }, [washPrice, addonChecked, addonPrices, manualChecked, manualPrices, config]);
+  }, [washPrice, addonChecked, addonPrices, manualChecked, manualPrices, customServices, config]);
 
   function resetSearchFields() {
     setSearchMode((m) => m);
@@ -305,6 +309,22 @@ export default function DailyEntryApp({
     });
   }
 
+  function addCustomService() {
+    setCustomServices((prev) => [...prev, { id: crypto.randomUUID(), name: '', price: 0 }]);
+  }
+
+  function updateCustomServiceName(id: string, name: string) {
+    setCustomServices((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
+  }
+
+  function updateCustomServicePrice(id: string, price: number) {
+    setCustomServices((prev) => prev.map((c) => (c.id === id ? { ...c, price } : c)));
+  }
+
+  function removeCustomService(id: string) {
+    setCustomServices((prev) => prev.filter((c) => c.id !== id));
+  }
+
   function setPay(method: PayMethod, status: PayStatus) {
     setPayMethod(method);
     setPayStatus(status);
@@ -327,6 +347,7 @@ export default function DailyEntryApp({
     setAddonPrices({});
     setManualChecked(new Set());
     setManualPrices({});
+    setCustomServices([]);
     setPay('نقدي', 'paid');
     setCardType('debit');
     setNotes('');
@@ -355,6 +376,7 @@ export default function DailyEntryApp({
       setAddonChecked(new Set(detail.addonCodes));
       setAddonPrices(Object.fromEntries(detail.addonManualPrices.map((m) => [m.code, m.price])));
       setManualChecked(new Set(detail.manualEntries.map((m) => m.code)));
+      setCustomServices(detail.customEntries.map((c) => ({ id: crypto.randomUUID(), name: c.name, price: c.price })));
       setManualPrices(Object.fromEntries(detail.manualEntries.map((m) => [m.code, m.price])));
       setPay(detail.payMethod, detail.payStatus);
       if (detail.cardType) setCardType(detail.cardType);
@@ -388,7 +410,8 @@ export default function DailyEntryApp({
 
   async function handleSubmit() {
     setFormError(null);
-    if (!phone.trim() || (!noPlate && !plateNumber.trim()) || (!washCode || washCode === 'none') && addonChecked.size === 0 && manualChecked.size === 0 || !employeeId) {
+    const hasCustom = customServices.some((c) => c.name.trim() && c.price > 0);
+    if (!phone.trim() || (!noPlate && !plateNumber.trim()) || (!washCode || washCode === 'none') && addonChecked.size === 0 && manualChecked.size === 0 && !hasCustom || !employeeId) {
       setFormError(tr('الرجاء تعبئة: رقم الجوال، رقم اللوحة، خدمة واحدة على الأقل (غسيل أساسي أو إضافة)، والموظف المنفّذ.'));
       return;
     }
@@ -402,6 +425,11 @@ export default function DailyEntryApp({
     });
     if (missingAddonPrice) {
       setFormError(tr('أدخل سعر الإضافة المحددة'));
+      return;
+    }
+    const incompleteCustom = customServices.find((c) => (c.name.trim() && c.price <= 0) || (!c.name.trim() && c.price > 0));
+    if (incompleteCustom) {
+      setFormError(tr('أكمل اسم وسعر الخدمة الإضافية أو احذفها'));
       return;
     }
 
@@ -422,6 +450,7 @@ export default function DailyEntryApp({
         addonCodes: Array.from(addonChecked),
         addonManualPrices: Array.from(addonChecked).map((code) => ({ code, price: addonPrices[code] || 0 })),
         manualEntries: Array.from(manualChecked).map((code) => ({ code, price: manualPrices[code] || 0 })),
+        customEntries: customServices.filter((c) => c.name.trim() && c.price > 0).map((c) => ({ name: c.name.trim(), price: c.price })),
         payMethod,
         payStatus,
         cardType: payMethod === 'بطاقة' ? cardType : null,
@@ -728,7 +757,39 @@ export default function DailyEntryApp({
                 </div>
               );
             })}
+            {customServices.map((c) => (
+              <div key={c.id} className="svc-row active" style={{ flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  placeholder={tr('اسم الخدمة')}
+                  value={c.name}
+                  onChange={(e) => updateCustomServiceName(c.id, e.target.value)}
+                  style={{ flex: 1, minWidth: 120 }}
+                />
+                <input
+                  type="number"
+                  className="svc-price"
+                  value={c.price || ''}
+                  onChange={(e) => updateCustomServicePrice(c.id, parseFloat(e.target.value) || 0)}
+                />
+                <button
+                  type="button"
+                  className="btn-lookup"
+                  style={{ background: '#a33', padding: '0 12px', flexShrink: 0 }}
+                  onClick={() => removeCustomService(c.id)}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
           </div>
+          <button
+            className="btn-lookup"
+            style={{ width: '100%', marginTop: 10, background: '#fff', color: 'var(--petrol)', border: '1.5px solid var(--line)' }}
+            onClick={addCustomService}
+          >
+            {tr('+ إضافة خدمة أخرى')}
+          </button>
         </div>
 
         <div className="total-box">

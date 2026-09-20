@@ -64,6 +64,9 @@ const DICT: Record<string, string> = {
   'بدون غسيل أساسي': 'No basic wash',
   'أدخل سعر الغسيل الأساسي': 'Enter the basic wash price',
   'أدخل سعر الإضافة المحددة': 'Enter the price for the selected add-on',
+  'أكمل اسم وسعر الخدمة الإضافية أو احذفها': 'Complete the custom service name and price, or remove it',
+  '+ إضافة خدمة أخرى': '+ Add another service',
+  'اسم الخدمة': 'Service name',
   'إضافات الغسيل (اختياري)': 'Wash Add-ons (optional)',
   'سعر ثابت': 'Fixed price',
 

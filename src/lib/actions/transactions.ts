@@ -60,7 +60,7 @@ function validateInput(input: SubmitTransactionInput) {
   if (!input.phone.trim()) throw new Error('رقم الجوال مطلوب');
   if (!input.isNoPlate && !input.plateNumber.trim()) throw new Error('رقم اللوحة مطلوب');
   if (!input.employeeId) throw new Error('الموظف المنفّذ مطلوب');
-  if (!input.washCode && input.addonCodes.length === 0 && input.manualEntries.length === 0) {
+  if (!input.washCode && input.addonCodes.length === 0 && input.manualEntries.length === 0 && input.customEntries.length === 0) {
     throw new Error('اختر خدمة واحدة على الأقل');
   }
 }
@@ -164,7 +164,7 @@ async function upsertCustomerAndVehicle(
 }
 
 async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: SubmitTransactionInput) {
-  const serviceRows: { service_group: 'wash' | 'addon' | 'manual'; service_code: string; service_name: string; service_name_en: string | null; price: number }[] = [];
+  const serviceRows: { service_group: 'wash' | 'addon' | 'manual' | 'custom'; service_code: string; service_name: string; service_name_en: string | null; price: number }[] = [];
 
   if (input.washCode) {
     const { data: wash, error } = await db.from('wash_options').select('*').eq('code', input.washCode).eq('is_current', true).maybeSingle();
@@ -201,6 +201,12 @@ async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: Sub
       if (!def) continue;
       serviceRows.push({ service_group: 'manual', service_code: def.code, service_name: def.name, service_name_en: def.name_en, price: m.price });
     }
+  }
+
+  for (const c of input.customEntries) {
+    const name = c.name.trim();
+    if (!name || c.price <= 0) continue;
+    serviceRows.push({ service_group: 'custom', service_code: 'custom', service_name: name, service_name_en: null, price: c.price });
   }
 
   return serviceRows;
@@ -347,11 +353,12 @@ export async function getTransactionDetail(transactionId: string): Promise<Trans
   if (!tx) throw new Error('العملية غير موجودة — ربما تم حذفها مسبقاً');
 
   const vehicle = tx.vehicles;
-  const services: { service_group: string; service_code: string; price: number }[] = tx.transaction_services ?? [];
+  const services: { service_group: string; service_code: string; service_name: string; price: number }[] = tx.transaction_services ?? [];
   const washRow = services.find((s) => s.service_group === 'wash');
   const addonEntries = services.filter((s) => s.service_group === 'addon').map((s) => ({ code: s.service_code, price: Number(s.price) }));
   const addonCodes = addonEntries.map((e) => e.code);
   const manualEntries = services.filter((s) => s.service_group === 'manual').map((s) => ({ code: s.service_code, price: Number(s.price) }));
+  const customEntries = services.filter((s) => s.service_group === 'custom').map((s) => ({ name: s.service_name, price: Number(s.price) }));
 
   return {
     id: tx.id,
@@ -369,6 +376,7 @@ export async function getTransactionDetail(transactionId: string): Promise<Trans
     addonCodes,
     addonManualPrices: addonEntries,
     manualEntries,
+    customEntries,
     payMethod: tx.pay_method,
     payStatus: tx.pay_status,
     cardType: tx.card_type,

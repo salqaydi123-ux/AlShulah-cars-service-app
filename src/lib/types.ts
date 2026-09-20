@@ -2,7 +2,7 @@ export type BodyType = 'sedan' | 'fourwd';
 export type PayStatus = 'paid' | 'pending';
 export type PayMethod = 'نقدي' | 'بطاقة' | 'آجل' | 'محصّل لاحقاً';
 export type CardType = 'debit' | 'credit' | 'amex';
-export type ServiceGroup = 'wash' | 'addon' | 'manual';
+export type ServiceGroup = 'wash' | 'addon' | 'manual' | 'custom';
 
 export interface WashOption {
   id: string;
@@ -99,6 +99,7 @@ export interface SubmitTransactionInput {
   addonCodes: string[];
   addonManualPrices: { code: string; price: number }[]; // يُستخدم فقط للإضافات المفعّل لها is_manual_price
   manualEntries: { code: string; price: number }[];
+  customEntries: { name: string; price: number }[]; // خدمات حرة — اسم وسعر بالكامل يدوي، بدون ربط بكتالوج
   payMethod: PayMethod;
   payStatus: PayStatus;
   cardType: CardType | null;
