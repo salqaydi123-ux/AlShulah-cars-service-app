@@ -87,8 +87,20 @@ npm run dev
 
 ```
 supabase/migrations/     ملفات SQL لإنشاء وتعبئة قاعدة البيانات
+supabase/functions/agent/ وكيل الشعلة الفرعي (Edge Function) — راجع القسم التالي
 src/lib/actions/         منطق التطبيق (Server Actions) — بحث، تسجيل عمليات، إعدادات
 src/lib/                 أنواع TypeScript، عميل Supabase، الجلسة/الدخول
 src/app/                 الصفحات (الرئيسية، الدخول، الإعدادات)
 src/components/          واجهة المستخدم (React) — مطابقة لتصميم الـ Prototype المرجعي
 ```
+
+---
+
+## 8) وكيل الذكاء الاصطناعي الفرعي (Sub-Agent)
+
+`supabase/functions/agent/` عبارة عن Supabase Edge Function مستقلة عن تطبيق
+Next.js — تُعرِّف الشعلة كوكيل مجال مالي (`finance-alshulah`) قابل للاستدعاء
+من منظومة **Main Agent Router** (مشروع Supabase منفصل تماماً يُنسّق بين عدة
+وكلاء مجال). تقرأ فقط من قاعدة بيانات هذا المشروع (بيانات مجمّعة، بدون أي
+معلومة شخصية عن العمال) ولا تُرسل شيئاً لأي مشروع آخر. تفاصيل النشر والعقد
+الكامل في [`supabase/functions/agent/README.md`](./supabase/functions/agent/README.md).
