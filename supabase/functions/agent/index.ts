@@ -14,6 +14,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const AGENT_KEY = Deno.env.get("AGENT_KEY")!;
 const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
+const ANTHROPIC_WORKSPACE_ID = Deno.env.get("ANTHROPIC_WORKSPACE_ID");
 const ANSWER_MODEL = Deno.env.get("ANSWER_MODEL") ?? "claude-sonnet-5";
 const PENDING_RECEIVABLES_ALERT = 5000; // د.إ — عتبة تنبيه الذمم الآجلة العالية
 
@@ -106,13 +107,16 @@ async function answerQuery(query: string, snapshot: Snapshot): Promise<string> {
     latest_payroll: { month: snapshot.latestPayrollMonth, total: snapshot.latestPayrollTotal },
   })}`;
 
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-api-key": ANTHROPIC_KEY,
+    "anthropic-version": "2023-06-01",
+  };
+  if (ANTHROPIC_WORKSPACE_ID) headers["anthropic-workspace-id"] = ANTHROPIC_WORKSPACE_ID;
+
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01",
-    },
+    headers,
     body: JSON.stringify({ model: ANSWER_MODEL, max_tokens: 800, system, messages: [{ role: "user", content: user }] }),
   });
   if (!r.ok) throw new Error(`Claude API ${r.status}: ${await r.text()}`);
