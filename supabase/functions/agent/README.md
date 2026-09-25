@@ -5,15 +5,26 @@ Supabase Edge Function تنفّذ عقد `get_summary` / `answer_query` الذي
 مجال" — مالية شخصية، عمل، صحة... إلخ). هذا الوكيل مسؤول فقط عن مجال مالية
 الشعلة، ويقرأ حصراً من قاعدة بيانات هذا المشروع.
 
-## النشر
+## النشر — تلقائي عبر GitHub Actions (مرة وحدة فقط للإعداد)
+
+أي دفعة لفرع `claude/car-wash-web-app-hmk9vw` تلمس `supabase/functions/**`
+تنشر تلقائياً عبر
+[`.github/workflows/deploy-agent.yml`](../../../.github/workflows/deploy-agent.yml).
+
+**إعداد لمرة وحدة**: بمستودع GitHub هذا → **Settings → Secrets and
+variables → Actions**، أضف:
+
+| الاسم | القيمة |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | Personal Access Token من نفس حساب Supabase الحقيقي للشعلة |
+| `AGENT_KEY` | سر عشوائي طويل — **يجب يطابق حرفياً** `AGENT_KEY_FINANCE_ALSHULAH` بمستودع main-agent-router |
+| `ANTHROPIC_API_KEY` | مفتاح Anthropic |
+
+**النشر اليدوي القديم** (احتياطي فقط):
 
 ```bash
-supabase functions deploy agent --project-ref <ALSHULAH_PROJECT_REF>
-
-supabase secrets set \
-  AGENT_KEY=<سر عشوائي طويل> \
-  ANTHROPIC_API_KEY=<مفتاح Anthropic> \
-  --project-ref <ALSHULAH_PROJECT_REF>
+supabase functions deploy agent --no-verify-jwt --project-ref <ALSHULAH_PROJECT_REF>
+supabase secrets set AGENT_KEY=<...> ANTHROPIC_API_KEY=<...> --project-ref <ALSHULAH_PROJECT_REF>
 ```
 
 `SUPABASE_URL` و`SUPABASE_SERVICE_ROLE_KEY` تُحقنان تلقائياً من Supabase لكل
