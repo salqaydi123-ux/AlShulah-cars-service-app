@@ -123,6 +123,7 @@ const DICT: Record<string, string> = {
   'مُحصَّل فعلياً': 'Actually Collected',
   'آجل — غير محصَّل (لحين السداد)': 'Deferred — Uncollected',
   'مستحقات سابقة تحصَّلت اليوم': 'Previous dues collected today',
+  'مستحقات سابقة تحصَّلت بهذا التاريخ:': 'Previous dues collected on this date:',
   'غير محسوبة ضمن مبيعات اليوم — محسوبة على تاريخ الخدمة الأصلي': 'Not counted in today\'s sales — attributed to the original service date',
   'الإجمالي الكلي (حجم المبيعات)': 'Grand Total (sales volume)',
   '🏦 تسوية مع رسالة البنك (لأي تاريخ)': '🏦 Bank SMS Reconciliation (any date)',

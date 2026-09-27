@@ -6,6 +6,7 @@ import { searchByPhone, searchByPlate } from '@/lib/actions/lookup';
 import {
   collectPayment,
   deleteTransaction,
+  getCollectedForDate,
   getReconciliationForDate,
   getTransactionDetail,
   reconcileBankForDate,
@@ -153,6 +154,10 @@ export default function DailyEntryApp({
   const [reconcileResult, setReconcileResult] = useState<BankReconciliationResult | null>(initialReconciliation);
   const [reconcileError, setReconcileError] = useState<string | null>(null);
   const [reconcileLoading, setReconcileLoading] = useState(false);
+  const [collectedForSelectedDate, setCollectedForSelectedDate] = useState<{ cash: number; card: number }>({
+    cash: initialSummary.collectedFromPreviousDuesCash,
+    card: initialSummary.collectedFromPreviousDuesCard,
+  });
 
   // المستحقات
   const [dueMode, setDueMode] = useState<'phone' | 'plate'>('phone');
@@ -501,6 +506,11 @@ export default function DailyEntryApp({
     } catch {
       /* تجاهل — يبقى الحقل فاضي لو تعذّر الجلب */
     }
+    try {
+      setCollectedForSelectedDate(await getCollectedForDate(date));
+    } catch {
+      setCollectedForSelectedDate({ cash: 0, card: 0 });
+    }
   }
 
   async function handleReconcile() {
@@ -555,6 +565,12 @@ export default function DailyEntryApp({
     if (item && item.date !== todayDate) {
       if (method === 'نقدي') setPrevDuesCollectedCashToday((prev) => prev + item.total);
       else setPrevDuesCollectedCardToday((prev) => prev + item.total);
+      if (reconcileDate === todayDate) {
+        setCollectedForSelectedDate((prev) => ({
+          cash: prev.cash + (method === 'نقدي' ? item.total : 0),
+          card: prev.card + (method === 'بطاقة' ? item.total : 0),
+        }));
+      }
     }
     setEntries((prev) =>
       prev.map((e) => (e.id === id ? { ...e, payStatus: 'paid', payMethod: method } : e))
@@ -925,6 +941,12 @@ export default function DailyEntryApp({
                 <input type="number" value={bankSmsAmount} onChange={(e) => setBankSmsAmount(e.target.value)} />
               </div>
             </div>
+            {(collectedForSelectedDate.cash > 0 || collectedForSelectedDate.card > 0) && (
+              <div style={{ background: '#eef6ee', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontSize: 12.5 }}>
+                {tr('مستحقات سابقة تحصَّلت بهذا التاريخ:')}{' '}
+                <b>{lang === 'ar' ? `نقدي ${collectedForSelectedDate.cash} + بطاقة ${collectedForSelectedDate.card}` : `Cash ${collectedForSelectedDate.cash} + Card ${collectedForSelectedDate.card}`}</b>
+              </div>
+            )}
             <button className="btn-lookup" style={{ width: '100%' }} disabled={reconcileLoading} onClick={handleReconcile}>
               {reconcileLoading ? tr('جاري الحساب...') : tr('احسب واحفظ')}
             </button>

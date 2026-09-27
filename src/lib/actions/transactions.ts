@@ -453,6 +453,14 @@ async function getCollectedFromPreviousDuesForDate(db: ReturnType<typeof supabas
   return { cash, card };
 }
 
+// عرض علني للدالة أعلاه — يسمح بمراجعة "شنو تحصّل بتاريخ معيّن" لأي يوم سابق، مو بس اليوم الحالي.
+// هذا مهم لأن ملخص "مستحقات سابقة تحصَّلت اليوم" بالصفحة الرئيسية يبيّن يوم التحصيل فقط وهو "اليوم"
+// الحالي — بعد ما يمر اليوم، ما فيه طريقة ثانية تتحقق منه غير هذي.
+export async function getCollectedForDate(date: string): Promise<{ cash: number; card: number }> {
+  const db = supabaseAdmin();
+  return getCollectedFromPreviousDuesForDate(db, date);
+}
+
 export async function getTodaySummary(): Promise<TodaySummary> {
   const db = supabaseAdmin();
   const today = todayDateStr();
