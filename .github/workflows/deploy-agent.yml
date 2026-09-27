@@ -1,0 +1,32 @@
+name: Deploy finance-alshulah agent
+
+on:
+  push:
+    branches: [claude/car-wash-web-app-hmk9vw]
+    paths:
+      - "supabase/functions/**"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: acobiomfsoyhgpkzqjlp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Edge Function
+        run: supabase functions deploy agent --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Set secrets
+        run: |
+          supabase secrets set \
+            AGENT_KEY="${{ secrets.AGENT_KEY }}" \
+            ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            ANTHROPIC_WORKSPACE_ID="wrkspc_011t1xs6jHtESQAZYp67P2eU" \
+            --project-ref "$SUPABASE_PROJECT_REF"
