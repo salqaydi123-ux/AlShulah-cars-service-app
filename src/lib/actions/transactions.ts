@@ -316,7 +316,11 @@ export async function updateTransaction(transactionId: string, input: SubmitTran
   validateInput(input);
   const db = supabaseAdmin();
 
-  const { data: existingTx, error: existingErr } = await db.from('transactions').select('tx_date, tx_time').eq('id', transactionId).maybeSingle();
+  const { data: existingTx, error: existingErr } = await db
+    .from('transactions')
+    .select('tx_date, tx_time, pay_status')
+    .eq('id', transactionId)
+    .maybeSingle();
   if (existingErr) throw new Error(existingErr.message);
   if (!existingTx) throw new Error('العملية غير موجودة — ربما تم حذفها مسبقاً');
 
@@ -328,9 +332,14 @@ export async function updateTransaction(transactionId: string, input: SubmitTran
   if (empErr) throw new Error(empErr.message);
   if (!employee) throw new Error('الموظف غير موجود');
 
+  // لو التعديل هو اللي حوّل الحالة من "معلّق" إلى "مسدد" (بدل زر "تحصيل الآن")، سجّل تاريخ
+  // التحصيل هنا أيضاً — وإلا تختفي هذي الدفعة من أي تقرير "مستحقات سابقة تحصَّلت" للأبد.
+  const justCollected = existingTx.pay_status === 'pending' && input.payStatus === 'paid';
+
   const { data: tx, error: txErr } = await db
     .from('transactions')
     .update({
+      ...(justCollected ? { collected_date: todayDateStr() } : {}),
       customer_id: customerId,
       vehicle_id: vehicleId,
       vehicle_plate_snapshot: buildPlateDisplay(vehicleDisplay),
