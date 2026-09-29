@@ -234,8 +234,12 @@ export default function DailyEntryApp({
     try {
       const loyalty = await getVehicleLoyaltyStatus(v.id);
       setLoyaltyEligible(loyalty.eligible);
-    } catch {
+      if (!loyalty.eligible) {
+        setScanMsg({ text: `[تشخيص مؤقت] فحص الولاء رجع eligible=false — عدد الغسلات المؤهّلة المحسوب: ${loyalty.qualifyingCount}` });
+      }
+    } catch (err: any) {
       setLoyaltyEligible(false);
+      setScanMsg({ text: `[تشخيص مؤقت] فحص الولاء فشل: ${err?.message || String(err)}`, isError: true });
     }
   }
 

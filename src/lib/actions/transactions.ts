@@ -227,10 +227,10 @@ async function getQualifyingWashCount(db: ReturnType<typeof supabaseAdmin>, vehi
   return (svcRows ?? []).length;
 }
 
-export async function getVehicleLoyaltyStatus(vehicleId: string): Promise<{ eligible: boolean }> {
+export async function getVehicleLoyaltyStatus(vehicleId: string): Promise<{ eligible: boolean; qualifyingCount: number }> {
   const db = supabaseAdmin();
   const count = await getQualifyingWashCount(db, vehicleId);
-  return { eligible: count % 6 === 5 };
+  return { eligible: count % 6 === 5, qualifyingCount: count };
 }
 
 async function buildServiceRows(
