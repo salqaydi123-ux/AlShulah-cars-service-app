@@ -410,6 +410,7 @@ export default function DailyEntryApp({
 
   const [formError, setFormError] = useState<string | null>(null);
   const [backdatedSavedMsg, setBackdatedSavedMsg] = useState<string | null>(null);
+  const [loyaltyRewardMsg, setLoyaltyRewardMsg] = useState<{ phone: string; plate: string; amount: number } | null>(null);
 
   async function handleEdit(id: string) {
     setFormError(null);
@@ -467,6 +468,7 @@ export default function DailyEntryApp({
   async function handleSubmit() {
     setFormError(null);
     setBackdatedSavedMsg(null);
+    setLoyaltyRewardMsg(null);
     const hasCustom = customServices.some((c) => c.name.trim() && c.price > 0);
     if (!phone.trim() || (!noPlate && !plateNumber.trim()) || (!washCode || washCode === 'none') && addonChecked.size === 0 && manualChecked.size === 0 && !hasCustom || !employeeId) {
       setFormError(tr('الرجاء تعبئة: رقم الجوال، رقم اللوحة، خدمة واحدة على الأقل (غسيل أساسي أو إضافة)، والموظف المنفّذ.'));
@@ -528,6 +530,10 @@ export default function DailyEntryApp({
           setEntries((prev) => [entry, ...prev]);
         } else {
           setBackdatedSavedMsg(tr('✓ تم حفظ العملية بتاريخ') + ' ' + entry.date);
+        }
+        const rewardApplied = entry.services.some((s) => s.name.includes('خصم برنامج الولاء'));
+        if (rewardApplied && /^05\d{8}$/.test(entry.phone)) {
+          setLoyaltyRewardMsg({ phone: entry.phone, plate: entry.plate, amount: loyaltyDiscount });
         }
       }
       resetForm();
@@ -644,6 +650,16 @@ export default function DailyEntryApp({
     const targetPhone = /^05\d{8}$/.test(lastSearchQuery) ? lastSearchQuery : /^05\d{8}$/.test(list[0].phone) ? list[0].phone : '';
     const url = targetPhone ? `https://wa.me/971${targetPhone.slice(1)}?text=${encoded}` : `https://api.whatsapp.com/send?text=${encoded}`;
     window.open(url, '_blank');
+  }
+
+  function sendLoyaltyThankYou() {
+    if (!loyaltyRewardMsg) return;
+    const msg =
+      `🎉 عزيزي العميل،\n` +
+      `سيارتك ${loyaltyRewardMsg.plate} حصلت على خصم ${loyaltyRewardMsg.amount} درهم ضمن برنامج الولاء بـ*الشعلة لخدمة السيارات* (كل 5 غسلات تحصل على خصم بالسادسة)!\n` +
+      `شكراً لثقتك ودعمك المستمر 🚗✨ نتشرف بخدمتك دائماً.`;
+    const encoded = encodeURIComponent(msg);
+    window.open(`https://wa.me/971${loyaltyRewardMsg.phone.slice(1)}?text=${encoded}`, '_blank');
   }
 
   const showList = pendingLoaded ? pendingList : entries.filter((e) => e.payStatus !== 'paid');
@@ -938,6 +954,12 @@ export default function DailyEntryApp({
         )}
         {formError && <div className="lookup-msg show error" style={{ marginBottom: 10 }}>{formError}</div>}
         {backdatedSavedMsg && <div className="lookup-msg show" style={{ marginBottom: 10 }}>{backdatedSavedMsg}</div>}
+        {loyaltyRewardMsg && (
+          <div className="lookup-msg show" style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>{tr('🎉 العميل استحق خصم ولاء بهذي العملية — تبي ترسل له رسالة تهنئة واتساب؟')}</span>
+            <button type="button" className="btn-lookup" onClick={sendLoyaltyThankYou}>{tr('📤 إرسال تهنئة واتساب')}</button>
+          </div>
+        )}
         <button className="submit-btn" disabled={submitting} onClick={handleSubmit}>
           {submitting ? tr('جاري الحفظ...') : editingId ? tr('حفظ التعديلات') : tr('تسجيل العملية')}
         </button>

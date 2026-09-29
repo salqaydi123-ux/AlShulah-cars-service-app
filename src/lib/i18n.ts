@@ -106,6 +106,8 @@ const DICT: Record<string, string> = {
   '🎉 هذي السيارة وصلت لعدد الغسلات المؤهّلة لبرنامج الولاء — خصم': '🎉 This car reached the loyalty program milestone — a',
   'يُطبَّق تلقائياً على الغسيل الأساسي المختار.': 'discount is applied automatically to the selected basic wash.',
   'بعد خصم الولاء:': 'After loyalty discount:',
+  '🎉 العميل استحق خصم ولاء بهذي العملية — تبي ترسل له رسالة تهنئة واتساب؟': '🎉 The customer earned a loyalty discount on this transaction — send a WhatsApp thank-you message?',
+  '📤 إرسال تهنئة واتساب': '📤 Send WhatsApp thank-you',
   '✓ تم حفظ العملية بتاريخ': '✓ Transaction saved for',
   'حالة الدفع': 'Payment Status',
   'نوع البطاقة (لحساب عمولة البنك)': 'Card Type (for bank commission)',
