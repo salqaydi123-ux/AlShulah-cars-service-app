@@ -202,7 +202,42 @@ async function upsertCustomerAndVehicle(
   return { customerId, vehicleId, vehicleDisplay };
 }
 
-async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: SubmitTransactionInput) {
+// برنامج الولاء: كل سيارة (بحسب هوية المركبة، مو رقم الجوال) تحصل على خصم بقيمة سعر "غسيل عادي"
+// الأساسي (wash_normal) على كل غسلة سادسة — أول 5 غسلات مؤهّلة مدفوعة عادي، السادسة مخفّضة/مجانية،
+// وتتكرر الدورة. يُحسب فقط للغسلات بتاريخ 1 أكتوبر 2026 فما بعد. القرار نهائي بالسيرفر دائماً
+// (يُعاد حسابه وقت الحفظ)، ما يُستقبل من العميل — تفادياً لأي تلاعب أو بيانات قديمة بالواجهة.
+const LOYALTY_START_DATE = '2026-10-01';
+
+async function getQualifyingWashCount(db: ReturnType<typeof supabaseAdmin>, vehicleId: string): Promise<number> {
+  const { data: txRows, error: txErr } = await db
+    .from('transactions')
+    .select('id')
+    .eq('vehicle_id', vehicleId)
+    .gte('tx_date', LOYALTY_START_DATE);
+  if (txErr) throw new Error(txErr.message);
+  const txIds = (txRows ?? []).map((r: any) => r.id);
+  if (txIds.length === 0) return 0;
+
+  const { data: svcRows, error: svcErr } = await db
+    .from('transaction_services')
+    .select('id')
+    .eq('service_group', 'wash')
+    .in('transaction_id', txIds);
+  if (svcErr) throw new Error(svcErr.message);
+  return (svcRows ?? []).length;
+}
+
+export async function getVehicleLoyaltyStatus(vehicleId: string): Promise<{ eligible: boolean }> {
+  const db = supabaseAdmin();
+  const count = await getQualifyingWashCount(db, vehicleId);
+  return { eligible: count % 6 === 5 };
+}
+
+async function buildServiceRows(
+  db: ReturnType<typeof supabaseAdmin>,
+  input: SubmitTransactionInput,
+  loyaltyVehicleId?: string
+) {
   const serviceRows: { service_group: 'wash' | 'addon' | 'manual' | 'custom'; service_code: string; service_name: string; service_name_en: string | null; price: number }[] = [];
 
   if (input.washCode) {
@@ -214,7 +249,28 @@ async function buildServiceRows(db: ReturnType<typeof supabaseAdmin>, input: Sub
       if (!input.washManualPrice || input.washManualPrice <= 0) throw new Error('أدخل سعر الغسيل الأساسي');
       price = input.washManualPrice;
     }
-    serviceRows.push({ service_group: 'wash', service_code: wash.code, service_name: wash.name, service_name_en: wash.name_en, price });
+    let serviceName = wash.name;
+    let serviceNameEn = wash.name_en;
+    if (loyaltyVehicleId) {
+      const count = await getQualifyingWashCount(db, loyaltyVehicleId);
+      if (count % 6 === 5) {
+        const { data: normalWash, error: nwErr } = await db
+          .from('wash_options')
+          .select('sedan_price, fourwd_price')
+          .eq('code', 'wash_normal')
+          .eq('is_current', true)
+          .maybeSingle();
+        if (nwErr) throw new Error(nwErr.message);
+        const rewardValue = normalWash ? (input.bodyType === 'sedan' ? normalWash.sedan_price : normalWash.fourwd_price) : 0;
+        const discount = Math.min(price, rewardValue);
+        if (discount > 0) {
+          price -= discount;
+          serviceName = `${wash.name} — خصم برنامج الولاء`;
+          serviceNameEn = `${wash.name_en ?? wash.name} — Loyalty reward`;
+        }
+      }
+    }
+    serviceRows.push({ service_group: 'wash', service_code: wash.code, service_name: serviceName, service_name_en: serviceNameEn, price });
   }
 
   if (input.addonCodes.length > 0) {
@@ -256,7 +312,7 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
   const db = supabaseAdmin();
 
   const { customerId, vehicleId, vehicleDisplay } = await upsertCustomerAndVehicle(db, input);
-  const serviceRows = await buildServiceRows(db, input);
+  const serviceRows = await buildServiceRows(db, input, vehicleId);
   const total = serviceRows.reduce((s, r) => s + r.price, 0);
 
   const { data: employee, error: empErr } = await db.from('employees').select('*').eq('id', input.employeeId).maybeSingle();

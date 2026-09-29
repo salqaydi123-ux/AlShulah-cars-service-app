@@ -9,6 +9,7 @@ import {
   getCollectedForDate,
   getReconciliationForDate,
   getTransactionDetail,
+  getVehicleLoyaltyStatus,
   reconcileBankForDate,
   searchStatement,
   searchStatementByPlate,
@@ -134,6 +135,7 @@ export default function DailyEntryApp({
   const [model, setModel] = useState('');
   const [bodyType, setBodyType] = useState<BodyType>('sedan');
   const [scanMsg, setScanMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [loyaltyEligible, setLoyaltyEligible] = useState(false);
 
   // الخدمات
   const [washCode, setWashCode] = useState<string>('none');
@@ -189,8 +191,15 @@ export default function DailyEntryApp({
         : selectedWash.fourwd_price
     : 0;
 
+  // برنامج الولاء (فعّال من 1 أكتوبر 2026): قيمة الخصم = سعر "غسيل عادي" حسب نوع الهيكل — القرار
+  // النهائي وقت الحفظ يُعاد حسابه بالسيرفر دائماً، هذا فقط لعرض توقّع دقيق للموظف قبل الحفظ.
+  const washNormalOption = config.washOptions.find((w) => w.code === 'wash_normal');
+  const loyaltyRewardValue = washNormalOption ? (bodyType === 'sedan' ? washNormalOption.sedan_price : washNormalOption.fourwd_price) : 0;
+  const loyaltyDiscount = loyaltyEligible && selectedWash ? Math.min(washPrice, loyaltyRewardValue) : 0;
+  const effectiveWashPrice = washPrice - loyaltyDiscount;
+
   const total = useMemo(() => {
-    let sum = washPrice;
+    let sum = effectiveWashPrice;
     for (const code of addonChecked) {
       const a = config.addonServices.find((x) => x.code === code);
       if (a) sum += a.is_manual_price ? addonPrices[code] || 0 : a.price;
@@ -202,7 +211,7 @@ export default function DailyEntryApp({
       sum += c.price;
     }
     return sum;
-  }, [washPrice, addonChecked, addonPrices, manualChecked, manualPrices, customServices, config]);
+  }, [effectiveWashPrice, addonChecked, addonPrices, manualChecked, manualPrices, customServices, config]);
 
   function resetSearchFields() {
     setSearchMode((m) => m);
@@ -215,13 +224,19 @@ export default function DailyEntryApp({
     setVehicleChoices([]);
   }
 
-  function fillVehicleFields(v: VehicleRecord) {
+  async function fillVehicleFields(v: VehicleRecord) {
     setPlateEmirate(v.plate_emirate || EMIRATES[0]);
     setPlateCode(v.plate_code || '');
     setPlateNumber(v.plate_number || '');
     setPlateCountry(v.plate_country || '');
     setModel(v.model || '');
     setBodyType(v.body_type || 'sedan');
+    try {
+      const loyalty = await getVehicleLoyaltyStatus(v.id);
+      setLoyaltyEligible(loyalty.eligible);
+    } catch {
+      setLoyaltyEligible(false);
+    }
   }
 
   function plateDisplay(v: VehicleRecord): string {
@@ -231,6 +246,7 @@ export default function DailyEntryApp({
 
   async function handleQuickSearch() {
     setVehicleChoices([]);
+    setLoyaltyEligible(false);
     if (searchMode === 'phone') {
       const q = quickSearchInput.trim();
       if (!q) return;
@@ -245,7 +261,7 @@ export default function DailyEntryApp({
             : tr('عميل جديد — تم نقل الرقم لخانة الجوال. أكمل باقي البيانات يدوياً.'),
         });
       } else if (result.vehicles.length === 1) {
-        fillVehicleFields(result.vehicles[0]);
+        await fillVehicleFields(result.vehicles[0]);
         const v = result.vehicles[0];
         const detailLine =
           lang === 'en'
@@ -272,7 +288,7 @@ export default function DailyEntryApp({
         setPhone(result.customer.phone);
         if (result.customer.name) setCustName(result.customer.name);
       }
-      fillVehicleFields(result.vehicle);
+      await fillVehicleFields(result.vehicle);
       const emirateText = result.vehicle.plate_emirate === 'other' ? result.vehicle.plate_country || '—' : emirateLabel(result.vehicle.plate_emirate, lang);
       const text =
         lang === 'en'
@@ -288,8 +304,8 @@ export default function DailyEntryApp({
     }
   }
 
-  function selectVehicleChoice(v: VehicleRecord) {
-    fillVehicleFields(v);
+  async function selectVehicleChoice(v: VehicleRecord) {
+    await fillVehicleFields(v);
     setVehicleChoices([]);
     const text =
       lang === 'en'
@@ -301,7 +317,10 @@ export default function DailyEntryApp({
   async function handlePlateBlur() {
     if (noPlate) return;
     const number = plateNumber.trim();
-    if (!number) return;
+    if (!number) {
+      setLoyaltyEligible(false);
+      return;
+    }
     const result = await searchByPlate({ plateEmirate, plateCode, plateNumber: number, plateCountry });
     if (result.vehicle) {
       if (result.customer) {
@@ -311,8 +330,15 @@ export default function DailyEntryApp({
       setModel(result.vehicle.model || '');
       setBodyType(result.vehicle.body_type || 'sedan');
       setScanMsg({ text: tr('✓ سيارة مسجّلة مسبقاً — تم تعبئة الجوال والموديل ونوع الهيكل تلقائياً. تأكد منها قبل الحفظ.') });
+      try {
+        const loyalty = await getVehicleLoyaltyStatus(result.vehicle.id);
+        setLoyaltyEligible(loyalty.eligible);
+      } catch {
+        setLoyaltyEligible(false);
+      }
     } else {
       setScanMsg({ text: tr('سيارة جديدة — الرجاء تعبئة باقي البيانات يدوياً (أول زيارة فقط).') });
+      setLoyaltyEligible(false);
     }
   }
 
@@ -357,6 +383,7 @@ export default function DailyEntryApp({
 
   function resetForm() {
     setTxDate(todayDate);
+    setLoyaltyEligible(false);
     setPhone('');
     setCustName('');
     setPlateEmirate(EMIRATES[0]);
@@ -386,6 +413,7 @@ export default function DailyEntryApp({
 
   async function handleEdit(id: string) {
     setFormError(null);
+    setLoyaltyEligible(false);
     setLoadingEditId(id);
     try {
       const detail = await getTransactionDetail(id);
@@ -714,13 +742,13 @@ export default function DailyEntryApp({
                 <option value="other">{tr('دولة أخرى')}</option>
               </select>
               <input className="plate-code" type="text" placeholder={tr('الرمز')} disabled={noPlate} value={plateCode} onChange={(e) => setPlateCode(e.target.value)} />
-              <input className="plate-number" type="text" placeholder={tr('الرقم')} disabled={noPlate} value={plateNumber} onChange={(e) => setPlateNumber(e.target.value)} onBlur={handlePlateBlur} />
+              <input className="plate-number" type="text" placeholder={tr('الرقم')} disabled={noPlate} value={plateNumber} onChange={(e) => { setPlateNumber(e.target.value); setLoyaltyEligible(false); }} onBlur={handlePlateBlur} />
             </div>
             {plateEmirate === 'other' && !noPlate && (
               <input type="text" placeholder={tr('اسم الدولة (مثال: عُمان)')} style={{ marginTop: 6 }} value={plateCountry} onChange={(e) => setPlateCountry(e.target.value)} />
             )}
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, cursor: 'pointer' }}>
-              <input type="checkbox" style={{ width: 16, height: 16 }} checked={noPlate} onChange={(e) => setNoPlate(e.target.checked)} />
+              <input type="checkbox" style={{ width: 16, height: 16 }} checked={noPlate} onChange={(e) => { setNoPlate(e.target.checked); setLoyaltyEligible(false); }} />
               <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('بدون لوحة (سيارة معرض / وارد للبيع)')}</span>
             </label>
           </div>
@@ -748,6 +776,11 @@ export default function DailyEntryApp({
               {config.washOptions.map((w) => <option key={w.code} value={w.code}>{catalogLabel(w, lang)}</option>)}
             </select>
           </div>
+          {loyaltyEligible && (
+            <div className="lookup-msg show" style={{ marginBottom: 10 }}>
+              {tr('🎉 هذي السيارة وصلت لعدد الغسلات المؤهّلة لبرنامج الولاء — خصم')} {loyaltyRewardValue} AED {tr('يُطبَّق تلقائياً على الغسيل الأساسي المختار.')}
+            </div>
+          )}
           {selectedWash && selectedWash.is_manual_price && (
             <div className="field" style={{ marginBottom: 0 }}>
               <label>{tr('أدخل سعر الغسيل الأساسي')}</label>
@@ -758,13 +791,22 @@ export default function DailyEntryApp({
                 value={washManualPrice || ''}
                 onChange={(e) => setWashManualPrice(parseFloat(e.target.value) || 0)}
               />
+              {loyaltyDiscount > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--petrol-2)', marginTop: 4 }}>
+                  {tr('بعد خصم الولاء:')} {effectiveWashPrice} AED
+                </div>
+              )}
             </div>
           )}
           {selectedWash && !selectedWash.is_manual_price && (
             <div style={{ fontSize: 12.5, color: 'var(--petrol-2)', fontWeight: 700 }}>
-              {lang === 'ar'
-                ? `السعر (${BODY_LABEL_BY_LANG.ar[bodyType]}): ${washPrice} AED`
-                : `Price (${BODY_LABEL_BY_LANG.en[bodyType]}): ${washPrice} AED`}
+              {loyaltyDiscount > 0
+                ? (lang === 'ar'
+                    ? `السعر بعد خصم الولاء (${BODY_LABEL_BY_LANG.ar[bodyType]}): ${effectiveWashPrice} AED`
+                    : `Price after loyalty discount (${BODY_LABEL_BY_LANG.en[bodyType]}): ${effectiveWashPrice} AED`)
+                : (lang === 'ar'
+                    ? `السعر (${BODY_LABEL_BY_LANG.ar[bodyType]}): ${washPrice} AED`
+                    : `Price (${BODY_LABEL_BY_LANG.en[bodyType]}): ${washPrice} AED`)}
             </div>
           )}
 

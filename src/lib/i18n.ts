@@ -103,6 +103,9 @@ const DICT: Record<string, string> = {
 
   'الدفع والتنفيذ': 'Payment & Execution',
   'تاريخ العملية': 'Transaction date',
+  '🎉 هذي السيارة وصلت لعدد الغسلات المؤهّلة لبرنامج الولاء — خصم': '🎉 This car reached the loyalty program milestone — a',
+  'يُطبَّق تلقائياً على الغسيل الأساسي المختار.': 'discount is applied automatically to the selected basic wash.',
+  'بعد خصم الولاء:': 'After loyalty discount:',
   '✓ تم حفظ العملية بتاريخ': '✓ Transaction saved for',
   'حالة الدفع': 'Payment Status',
   'نوع البطاقة (لحساب عمولة البنك)': 'Card Type (for bank commission)',
