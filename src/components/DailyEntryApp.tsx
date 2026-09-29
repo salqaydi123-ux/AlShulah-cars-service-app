@@ -120,6 +120,9 @@ export default function DailyEntryApp({
   const [lookupMsg, setLookupMsg] = useState<{ text: string; isError?: boolean } | null>(null);
   const [vehicleChoices, setVehicleChoices] = useState<VehicleRecord[]>([]);
 
+  // تاريخ العملية — افتراضياً اليوم، يمكن تغييره لإدخال عملية بتاريخ سابق نُسيت إضافتها
+  const [txDate, setTxDate] = useState(todayDate);
+
   // بيانات العميل والسيارة
   const [phone, setPhone] = useState('');
   const [custName, setCustName] = useState('');
@@ -353,6 +356,7 @@ export default function DailyEntryApp({
   }
 
   function resetForm() {
+    setTxDate(todayDate);
     setPhone('');
     setCustName('');
     setPlateEmirate(EMIRATES[0]);
@@ -378,12 +382,14 @@ export default function DailyEntryApp({
   }
 
   const [formError, setFormError] = useState<string | null>(null);
+  const [backdatedSavedMsg, setBackdatedSavedMsg] = useState<string | null>(null);
 
   async function handleEdit(id: string) {
     setFormError(null);
     setLoadingEditId(id);
     try {
       const detail = await getTransactionDetail(id);
+      setTxDate(detail.txDate);
       setPhone(detail.phone);
       setCustName(detail.custName);
       setPlateEmirate(detail.plateEmirate || EMIRATES[0]);
@@ -432,6 +438,7 @@ export default function DailyEntryApp({
 
   async function handleSubmit() {
     setFormError(null);
+    setBackdatedSavedMsg(null);
     const hasCustom = customServices.some((c) => c.name.trim() && c.price > 0);
     if (!phone.trim() || (!noPlate && !plateNumber.trim()) || (!washCode || washCode === 'none') && addonChecked.size === 0 && manualChecked.size === 0 && !hasCustom || !employeeId) {
       setFormError(tr('الرجاء تعبئة: رقم الجوال، رقم اللوحة، خدمة واحدة على الأقل (غسيل أساسي أو إضافة)، والموظف المنفّذ.'));
@@ -458,6 +465,7 @@ export default function DailyEntryApp({
     setSubmitting(true);
     try {
       const payload = {
+        txDate,
         phone: phone.trim(),
         custName: custName.trim(),
         plateEmirate,
@@ -486,7 +494,13 @@ export default function DailyEntryApp({
         setPendingList((prev) => prev.map((e) => (e.id === editingId ? updated : e)));
       } else {
         const entry = await submitTransaction(payload);
-        setEntries((prev) => [entry, ...prev]);
+        // لو العملية بتاريخ سابق، ما تنضاف لسجل/ملخص اليوم المحلي — تبقى محسوبة صح على تاريخها الفعلي
+        // بقاعدة البيانات، وتظهر لو رجعت لذاك التاريخ من قسم التسوية أو كشف الحساب.
+        if (entry.date === todayDate) {
+          setEntries((prev) => [entry, ...prev]);
+        } else {
+          setBackdatedSavedMsg(tr('✓ تم حفظ العملية بتاريخ') + ' ' + entry.date);
+        }
       }
       resetForm();
     } catch (err: any) {
@@ -839,6 +853,10 @@ export default function DailyEntryApp({
         <div className="card">
           <h2><span className="dot" /> {tr('الدفع والتنفيذ')}</h2>
           <div className="field">
+            <label>{tr('تاريخ العملية')}</label>
+            <input type="date" value={txDate} max={todayDate} onChange={(e) => setTxDate(e.target.value)} />
+          </div>
+          <div className="field">
             <label>{tr('حالة الدفع')}</label>
             <div className="pay-toggle">
               <button className={payMethod === 'نقدي' ? 'sel' : ''} onClick={() => setPay('نقدي', 'paid')}>{PAY_METHOD_LABEL_BY_LANG[lang]['نقدي']}</button>
@@ -877,6 +895,7 @@ export default function DailyEntryApp({
           </div>
         )}
         {formError && <div className="lookup-msg show error" style={{ marginBottom: 10 }}>{formError}</div>}
+        {backdatedSavedMsg && <div className="lookup-msg show" style={{ marginBottom: 10 }}>{backdatedSavedMsg}</div>}
         <button className="submit-btn" disabled={submitting} onClick={handleSubmit}>
           {submitting ? tr('جاري الحفظ...') : editingId ? tr('حفظ التعديلات') : tr('تسجيل العملية')}
         </button>

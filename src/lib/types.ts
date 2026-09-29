@@ -133,6 +133,7 @@ export interface SelectedService {
 }
 
 export interface SubmitTransactionInput {
+  txDate: string; // YYYY-MM-DD — تاريخ تنفيذ الخدمة الفعلي؛ يسمح بإدخال عملية بتاريخ سابق نُسيت إضافتها
   phone: string;
   custName: string;
   plateEmirate: string;

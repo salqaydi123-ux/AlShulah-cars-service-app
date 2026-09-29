@@ -102,6 +102,8 @@ const DICT: Record<string, string> = {
   'الإجمالي': 'Total',
 
   'الدفع والتنفيذ': 'Payment & Execution',
+  'تاريخ العملية': 'Transaction date',
+  '✓ تم حفظ العملية بتاريخ': '✓ Transaction saved for',
   'حالة الدفع': 'Payment Status',
   'نوع البطاقة (لحساب عمولة البنك)': 'Card Type (for bank commission)',
   'نوع البطاقة': 'Card Type',

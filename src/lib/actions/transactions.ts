@@ -101,6 +101,7 @@ function validateInput(input: SubmitTransactionInput) {
   if (!input.washCode && input.addonCodes.length === 0 && input.manualEntries.length === 0 && input.customEntries.length === 0) {
     throw new Error('اختر خدمة واحدة على الأقل');
   }
+  if (!input.txDate || input.txDate > todayDateStr()) throw new Error('تاريخ العملية غير صالح — لازم يكون اليوم أو تاريخ سابق');
 }
 
 type VehicleDisplay = { plate_emirate: string; plate_code: string; plate_number: string; plate_country: string | null; is_no_plate: boolean };
@@ -269,7 +270,7 @@ export async function submitTransaction(input: SubmitTransactionInput): Promise<
       customer_id: customerId,
       vehicle_id: vehicleId,
       vehicle_plate_snapshot: buildPlateDisplay(vehicleDisplay),
-      tx_date: todayDateStr(),
+      tx_date: input.txDate,
       tx_time: now.toTimeString().slice(0, 8),
       employee_id: employee.id,
       employee_name_snapshot: employee.name,
@@ -340,6 +341,7 @@ export async function updateTransaction(transactionId: string, input: SubmitTran
     .from('transactions')
     .update({
       ...(justCollected ? { collected_date: todayDateStr() } : {}),
+      tx_date: input.txDate,
       customer_id: customerId,
       vehicle_id: vehicleId,
       vehicle_plate_snapshot: buildPlateDisplay(vehicleDisplay),
@@ -411,6 +413,7 @@ export async function getTransactionDetail(transactionId: string): Promise<Trans
 
   return {
     id: tx.id,
+    txDate: tx.tx_date,
     phone: tx.customers?.phone ?? '',
     custName: tx.customers?.name ?? '',
     plateEmirate: vehicle?.plate_emirate || 'الشارقة',
